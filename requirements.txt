@@ -1,0 +1,10 @@
+h5py==2.9.0
+numexpr==2.6.9
+numpy==1.16.2
+pandas==0.24.1
+py4j==0.10.7
+pyspark==2.4.0
+python-dateutil==2.8.0
+pytz==2018.9
+six==1.12.0
+tables==3.4.4
