@@ -17,8 +17,9 @@ March 7th:
 2. Start with basic models: linear regression + ridge -- [Done with 2 features]
 
 TODO:
-1. Join rows by timestamp, so that we may actually start constructing a dataset consisting of time series --> break into (train, test)
-2. Normalize features + calculate correlation between different combination of features and dependent variable
+1. Illustrate the features with the dependent variable, check for id/timestamp
+2. Join rows by timestamp, so that we may actually start constructing a dataset consisting of time series --> break into (train, test)
+3. Normalize features + calculate correlation between different combination of features and dependent variable
 '''
 
 def init_spark():
@@ -41,8 +42,9 @@ def as_old(v):
 
 
 def load_data(filename):
-    # initialize spark, use max 
     spark = init_spark()
+
+    # probably not necessary with our dataset..
     spark.conf.set("spark.executor.memory", '32g')
     spark.conf.set('spark.executor.cores', '50')
     spark.conf.set('spark.cores.max', '50')
@@ -50,9 +52,12 @@ def load_data(filename):
 
     # load df, choose a few features to start with without any null values
     # cast each column from string to float
-    df = spark.read.csv(filename, header=True).select(['id', 'fundamental_2', 'fundamental_7', 'y'])
+    df = spark.read.csv(filename, header=True).select(['id', 'timestamp', 'fundamental_2', 'fundamental_7', 'y'])
     df = df.select(*(col(c).cast("float").alias(c) for c in df.columns)).na.fill(0)
- 
+    num_id, num_timestamp = df.select("id").distinct().count(), df.select("timestamp").distinct().count()
+    market_df = df.select(["timestamp", 'fundamental_2', 'fundamental_7', "y"]).groupBy("timestamp").sort(df.timestamp)
+    print(market_df.show())
+
     # set up features as one vector and output variable combined as labeledpoint
     assembler = VectorAssembler(inputCols=['fundamental_2', 'fundamental_7'], outputCol="features")
     transformed = assembler.transform(df).select(col("y").alias("label"), col("features"))
@@ -69,6 +74,7 @@ def load_data(filename):
     ridge_preds = labeledRDD.map(lambda p: (p.label, ridge_model.predict(p.features)))
     ridge_MSE = ridge_preds.map(lambda x:(x[0] - x[1])**2).reduce(lambda x,y:x + y) / ridge_preds.count()
     print("Ridge Regression Mean Squared Error = " + str(ridge_MSE))
+    # split: train = df.limit(timestamp_used_for_training), test = df.subtract(train)
 
 
 if __name__ == "__main__":
