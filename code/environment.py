@@ -1,6 +1,10 @@
 import pandas as pd
 import numpy as np
 from sklearn.metrics import r2_score
+import features
+
+#TODO: 
+# add FeatureSelection object into Environment, which is a fully preprocessed + engineered train/test data
 
 # turn dataset into usable features mimicking Kagglegym
 class Environment(object):
@@ -12,9 +16,9 @@ class Environment(object):
             self.fullset = df
             self.timestamp = 0
             self.unique_timestamp = self.fullset["timestamp"].unique()
-            timesplit = self.unique_timestamp[i]
             self.n = len(self.unique_timestamp)
-            self.unique_idx = int(n*split_ratio)
+            self.unique_idx = int(self.n*split_ratio)
+            timesplit = self.unique_timestamp[self.unique_idx]
             self.split_ratio = split_ratio
             self.train = self.fullset[self.fullset.timestamp < timesplit]
             self.test = self.fullset[self.fullset.timestamp >= timesplit]
