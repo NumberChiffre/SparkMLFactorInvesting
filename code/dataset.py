@@ -4,7 +4,7 @@ import pyspark
 from pyspark import SparkContext
 from pyspark.rdd import RDD
 from pyspark.sql import SparkSession
-import environment
+import environment, sys
 
 def init_spark():
     spark = SparkSession \
@@ -37,21 +37,33 @@ class Dataset(object):
 
     # fill NaN with median of each column by default
     # best option to deal with this dataset due to a large amount of outliers
-    def preprocess(self, fill_by_median=True, use_sigmoid=True):
+    def preprocess(self, fill_method='median', scale_method='normalize'):
         #self.load_data()
         df = self.fullset
         features = [c for c in df.columns if c not in self.ind and c not in ['y']]
-        if fill_by_median:
+
+        if fill_method == 'median':
             df_prep = df.fillna(df[features].dropna().median())
-        else:
+        elif fill_method == 'mean':
             df_prep = df.fillna(df[features].dropna().mean())
+        elif fill_method == 'remove':
+            df_prep = df.fillna(0)
+        else:
+            raise Exception('Dataset preprocess fill method does not exist!')
+            sys.exit(1)
+
         df_norm = df_prep[features+['y']]
 
         # scale, by default using sigmoid on features
-        if use_sigmoid:
-            df_norm = df_norm.apply(lambda x:1/(1+np.exp(-x)))
-        else:
-            df_norm = (df_norm - df_norm.min()) / (df_norm.max() - df_norm.min())
+        if scale_method != 'none':
+            if scale_method == 'sigmoid':
+                df_norm = df_norm.apply(lambda x:1/(1+np.exp(-x)))
+            elif scale_method == 'normalize':
+                df_norm = (df_norm - df_norm.min()) / (df_norm.max() - df_norm.min())
+            else:
+                raise Exception('Dataset preprocess fill method does not exist!')
+                sys.exit(1)
+
         df_norm[self.ind] = df_prep[self.ind]
         self.features = features
         self.df_norm = df_norm
@@ -66,6 +78,7 @@ class Dataset(object):
                 scaled_df[str(col)] = self.scale_feature(old_values)
         return scaled_df
         """
+    
     def scale_feature(self, values):
         new_values = []
         for value in values:
