@@ -53,18 +53,21 @@ class Dataset(object):
             sys.exit(1)
 
         df_norm = df_prep[features+['y']]
-
+        #df_norm = spark.createDataFrame(df_norm).rdd
         # scale, by default using sigmoid on features
         if scale_method != 'none':
             if scale_method == 'sigmoid':
                 df_norm = df_norm.apply(lambda x:1/(1+np.exp(-x)))
+                #df_norm = df_norm.map(lambda x:1/(1+np.exp(-x)))
             elif scale_method == 'normalize':
-                df_norm = (df_norm - df_norm.min()) / (df_norm.max() - df_norm.min())
+                df_norm = df_norm.apply(lambda x:(x-np.mean(x))/(np.max(x)-np.min(x)))
+                #df_norm = df_norm.map(lambda x:(x-x.mean())/(x.max()-x.min()))
             else:
                 raise Exception('Dataset preprocess fill method does not exist!')
                 sys.exit(1)
 
         df_norm[self.ind] = df_prep[self.ind]
+        df_norm = df_norm[self.ind + features + ['y']]
         self.features = features
         self.df_norm = df_norm
         return self.df_norm

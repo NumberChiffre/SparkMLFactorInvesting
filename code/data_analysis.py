@@ -41,12 +41,33 @@ class DataAnalysis(object):
     def analyze_corr(self, df_norm=None):
         if df_norm is None:
             df, y = self.df.drop(columns=self.ind), self.df['y']
+            df_features = self.df.drop(columns=self.ind + ['y'])
         else:
             df, y = df_norm.drop(columns=self.ind), df_norm['y']
+            df_features = df_norm.drop(columns=self.ind + ['y'])
+
+        corr = df_features.corr()
+        fig = plt.figure()
+        ax = fig.add_subplot(111)
+        cax = ax.matshow(corr, cmap='coolwarm', vmin=-1, vmax=1)
+        fig.colorbar(cax)
+        ticks = np.arange(0,len(df_features.columns),1)
+        ax.set_xticks(ticks)
+        plt.xticks(rotation=90)
+        ax.set_yticks(ticks)
+        ax.set_xticklabels(df_features.columns)
+        ax.set_yticklabels(df_features.columns)
+        plt.savefig(self.outpath+'features_corr.png')
+
+        corr = corr.abs()
+        upper = corr.where(np.triu(np.ones(corr.shape), k=1).astype(np.bool))
+        high_corr = [column for column in upper.columns if any(upper[column] >= 0.90)]
+        print(high_corr)
         return df.corrwith(y).sort_values(ascending=False)
 
     def analyze_outliers(self):
-        pass
+        self.df['y'].describe()
+        return
 
     def security_regression(self):
         train_data, test_data = self.env.train[self.cols+self.ind], self.env.test[self.cols+self.ind]
@@ -89,18 +110,17 @@ if __name__ == "__main__":
     data_analysis = DataAnalysis(env, cols)
 
     # unprocessed data
-    print(data_analysis.analyze_corr().head(6))
-    print(data_analysis.analyze_corr().tail(6))
-    top_nan_features = data_analysis.analyze_nan()
-    print(data_analysis.df.describe())
+    #print(data_analysis.analyze_corr().head(6))
+    #print(data_analysis.analyze_corr().tail(6))
+    #top_nan_features = data_analysis.analyze_nan()
+    #print(data_analysis.df.describe())
 
     # preprocessed data
     data_obj = dataset.create()
     df = data_obj.preprocess()
-    print(data_analysis.analyze_corr(df).head(6))
-    print(data_analysis.analyze_corr(df).tail(6))
+    data_analysis.analyze_corr(df)
+    #print(data_analysis.analyze_corr(df).head(6))
+    #print(data_analysis.analyze_corr(df).tail(6))
     features_obj = FeatureSelection(data_obj)
-    clusters, singles = features_obj.cluster_corr()
+    clusters = features_obj.cluster_corr()
     print(clusters)
-    print(singles)
-    
