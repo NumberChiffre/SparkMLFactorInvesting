@@ -48,6 +48,8 @@ class Dataset(object):
             df_prep = df.fillna(df[features].dropna().mean())
         elif fill_method == 'remove':
             df_prep = df.fillna(0)
+        elif fill_method == 'none':
+            df_prep = df
         else:
             raise Exception('Dataset preprocess fill method does not exist!')
             sys.exit(1)
@@ -60,7 +62,7 @@ class Dataset(object):
                 df_norm = df_norm.apply(lambda x:1/(1+np.exp(-x)))
                 #df_norm = df_norm.map(lambda x:1/(1+np.exp(-x)))
             elif scale_method == 'normalize':
-                df_norm = df_norm.apply(lambda x:(x-np.mean(x))/(np.max(x)-np.min(x)))
+                df_norm = df_norm.apply(lambda x:(x-np.min(x))/(np.max(x)-np.min(x)))
                 #df_norm = df_norm.map(lambda x:(x-x.mean())/(x.max()-x.min()))
             else:
                 raise Exception('Dataset preprocess fill method does not exist!')
@@ -82,6 +84,13 @@ class Dataset(object):
         return scaled_df
         """
     
+    def signedLog(x):
+        return np.sign(x) * np.log(np.abs(x))
+
+    def signedExp(x):
+        return np.sign(x) * np.exp(np.abs(x))
+
+
     def scale_feature(self, values):
         new_values = []
         for value in values:

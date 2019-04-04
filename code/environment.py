@@ -1,32 +1,32 @@
 import pandas as pd
 import numpy as np
 from sklearn.metrics import r2_score
-import features
+from dataset import Dataset
 
 #TODO: 
 # add FeatureSelection object into Environment, which is a fully preprocessed + engineered train/test data
 
 # turn dataset into usable features mimicking Kagglegym
 class Environment(object):
-    def __init__(self, df=None, filepath="data/train.h5", split_ratio=0.6):
-        if df is None:
+    def __init__(self, df=pd.DataFrame(), filepath="data/train.h5", split_ratio=0.6):
+        if df.empty:
             with pd.HDFStore(filepath, "r") as hfdata:
                 self.fullset = hfdata.get("train")
         else:
             self.fullset = df
-            self.timestamp = 0
-            self.unique_timestamp = self.fullset["timestamp"].unique()
-            self.n = len(self.unique_timestamp)
-            self.unique_idx = int(self.n*split_ratio)
-            timesplit = self.unique_timestamp[self.unique_idx]
-            self.split_ratio = split_ratio
-            self.train = self.fullset[self.fullset.timestamp < timesplit]
-            self.test = self.fullset[self.fullset.timestamp >= timesplit]
+        self.timestamp = 0
+        self.unique_timestamp = self.fullset["timestamp"].unique()
+        self.n = len(self.unique_timestamp)
+        self.unique_idx = int(self.n*split_ratio)
+        timesplit = self.unique_timestamp[self.unique_idx]
+        self.split_ratio = split_ratio
+        self.train = self.fullset[self.fullset.timestamp < timesplit]
+        self.test = self.fullset[self.fullset.timestamp >= timesplit]
 
-            # Needed to compute final score
-            self.full = self.test.loc[:, ['timestamp', 'y']]
-            self.full['y_hat'] = 0.0
-            self.temp_test_y = None
+        # Needed to compute final score
+        self.full = self.test.loc[:, ['timestamp', 'y']]
+        self.full['y_hat'] = 0.0
+        self.temp_test_y = None
 
     def reset(self):
         timesplit = self.unique_timestamp[self.unique_idx]
@@ -79,8 +79,10 @@ class Environment(object):
     def __str__(self):
         return "Environment()"
 
-def make():
-    return Environment()
+def make(dataset=[]):
+    if dataset is None:
+        return Environment()
+    return Environment(dataset)
 
 class Observation(object):
     def __init__(self, train, target, features):
