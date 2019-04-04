@@ -3,15 +3,19 @@ import numpy as np
 import re
 import statsmodels.api as sm
 from sklearn.metrics import accuracy_score, mean_squared_error
-from sklearn.linear_model import LassoCV
+from sklearn.linear_model import LassoCV, Ridge
 from sklearn.model_selection import GridSearchCV
 from sklearn.ensemble import ExtraTreesClassifier, RandomForestClassifier, ExtraTreesRegressor
+
+import os
+os.environ['KMP_DUPLICATE_LIB_OK'] = 'True'
 import xgboost as xgb
 import matplotlib
 matplotlib.use('PS')
 import matplotlib.pyplot as plt
 import environment
 from dataset import Dataset
+
 
 # use the Dataset object to perform feature selection
 class FeatureSelection(object):
@@ -71,8 +75,7 @@ class FeatureSelection(object):
                 cluster.add(correlated_features_neg)
         return cluster
 
-    #TODO: 
-    # add extra features: lagged + fusion of existing features
+
     def filter_features(self, num_features_threshold=10):
         """
         Once highly correlated features are found, we aim to combine them to form new features
@@ -80,9 +83,6 @@ class FeatureSelection(object):
         - combination of highly correlated features through summation/sub, weighted sums
         - produce lagged features, will be based on sign of autocorrelation
         """
-
-        #TODO: need check correlation between de-mean features, check for multicollinearity
-        # keep high correlated features with output y and de-mean in addition to existing features
         core_features = self.features
         features_df = self.train[core_features]
         """
@@ -97,10 +97,55 @@ class FeatureSelection(object):
         #y = features_df['y']
         features_corr_to_y = features_df[core_features].corrwith(y).abs().sort_values(ascending=False)
         print(features_corr_to_y)
-        #features_corr_to_y = features_df[['timestamp'] + core_features].groupby('timestamp').apply(lambda x:x.mean())[core_features].corrwith(y.groupby('timestamp').apply(lambda x:x.mean())['y']).sort_values(ascending=False)
         selected_features = list(features_corr_to_y.head(num_features_threshold).index)
         self.features = selected_features
         return selected_features
+
+    # generate single feature linear models to assess their reward score
+    def generate_single_reward(self):
+        train = self.train
+        top_features = self.features
+        track_score = {}
+        for feature in top_features:
+            model = Ridge()
+            model.fit(np.array(train[feature].values).reshape(-1,1), train.y.values)
+            rewards = {}    
+            env = environment.make(df)
+            observation = env.reset()
+
+            while True:
+                test_x = np.array(observation.features[feature].values).reshape(-1,1)
+                observation.target.y = model.predict(test_x)
+                target = observation.target
+                timestamp = observation.features["timestamp"][0]
+                if timestamp % 100 == 0:
+                    print("Timestamp #{}".format(timestamp))
+
+                observation, reward, done, info = env.step(target)
+                if done:
+                    track_score[feature] = info['public_score']
+                    print(feature, track_score[feature])
+                    break
+        rewards_df = pd.DataFrame.from_dict(track_score, orient='index', columns=['features','reward']).sort_values(by='reward', ascending=False)
+        rewards_df.to_csv(self.outpath+'_Ridge_Reward.csv')
+
+    # rank corr with y and single feature reward score
+    # take top features with the least delta in rank
+    def select_top_features(self, num_features_threshold=14, abs_rank_delta=25):
+        y = self.train['y']
+        train = self.train[self.features]
+        corr_with_y = train.corrwith(y).abs().sort_values(ascending=False).to_frame(name='corr')
+        corr_with_y.index.name = 'features'
+        corr_with_y.reset_index(level=0, inplace=True)
+        corr_with_y['rank_corr'] = corr_with_y['corr'].rank()
+        reward_df = pd.read_csv(self.outpath+'_Ridge_Reward.csv')
+        reward_df['rank_reward'] = reward_df['reward'].rank()
+        rank_df = pd.merge(corr_with_y, reward_df, on='features')
+        top_rank_df = rank_df[(abs(rank_df['rank_corr']-rank_df['rank_reward']) < abs_rank_delta) & (rank_df['rank_reward'] > 0)]
+        top_rank_df.to_csv(self.outpath+'_Top_Ridge_Corr_Reward_Rank.csv')
+        print(top_rank_df)
+        return list(top_rank_df.head(num_features_threshold)['features'])
+
 
     # feature engineering on filtered features based on correlation against the output variable
     def generate_features(self, features=[]):
@@ -131,7 +176,7 @@ class FeatureSelection(object):
             #features_df[[c+'_rollvol'+str(2*lag) for c in selected_features]] = features_df[['timestamp']+selected_features].groupby('timestamp')[selected_features].rolling(2*lag).std().fillna(0)
             features_df['y_rolling_vol'+'_lag'+str(2*lag)] = features_df[['timestamp','y']].groupby('timestamp').mean().rolling(2*lag).std().fillna(0)  
         features_df['y_cumsum'] = features_df[['timestamp', 'y']].groupby('timestamp').mean().cumsum().fillna(0)
-        self.features = [c for c in features_df if c not in self.ind + ['y'] + self.features]
+        self.features = [c for c in features_df if c not in self.ind + ['y'] + selected_features]
         self.train = features_df.fillna(0)
         return self.train
     
@@ -173,25 +218,32 @@ class FeatureSelection(object):
         """
         params = {'n_estimators':100, 'max_depth':4, 'random_state':17, 'verbose':0}
         etr = ExtraTreesRegressor(n_jobs=-1, **params)
+        num_features = 20
+        title = 'Top ' + str(num_features) + ' Features [60 percent of Training + 40 percent for CV]'
+        features_rank = self.generate_feature_importance(etr, x_train, y_train, num_features=num_features, title=title)    
+        #features_rank = pd.DataFrame(list(model.get_booster().get_fscore().items()), index=self.features, columns=['importance']).sort_values('importance', ascending=False)
+        top_features = [features_rank.head(10).index]
+        print(features_rank)
+        
+        """
         model = etr.fit(x_train, y_train)
         features_rank = pd.DataFrame(model.feature_importances_, index=self.features, columns=['importance']).sort_values(by='importance', ascending=False)
-        top_features = list(features_rank.head(10).index)
-        """
+        top_features = list(features_rank.head(14))
+        print(top_features)
+        
         plt.xticks(np.arange(len(features_rank.head(10))), features_rank.head(10).index, label="Features", rotation='vertical')
         plt.bar(np.arange(len(features_rank.head(10))), features_rank['importance'])
         plt.tight_layout()
-        """
-        features_rank.head(15).plot(kind='barh', color='#0b3fe8', legend=None, figsize=(16,8))
+        
+        features_rank[top_features].sort_values(by='importance', inplace=True).plot(kind='barh', color='#0b3fe8', legend=None, figsize=(20,8))
         plt.xlabel('Feature Importance')
         plt.ylabel('Features')
         plt.title('Top 10 ETR Features [60 percent of Training + 40 percent for CV]')
         #plt.tight_layout()
         plt.savefig('output/features_importance_etr.png')
-        print(features_rank)
-        print(top_features)
         #print(model.score(x_cv, y_cv))
         #print(model.score(x_cv[features_rank.head(10).index], y_cv))
-
+        """
         params = {
             'objective' : 'reg:linear'
             ,'tree_method': 'hist'
@@ -205,7 +257,6 @@ class FeatureSelection(object):
             ,'base_score' : 0.0
             ,'reg_lambda': 0.5
             ,'reg_alpha': 0.0
-
         } 
 
         """
@@ -219,7 +270,6 @@ class FeatureSelection(object):
         
         xgb_ = xgb.XGBRegressor(n_jobs=-1)
         clf = xgb_.fit(x_train, y_train)
-       
         clf = GridSearchCV(xgb_, {'max_depth': [4, 8],
                                     'min_child_weight':[50, 100],
                                     'reg_lambda:': [0.3, 0.6, 0.9],
@@ -228,11 +278,10 @@ class FeatureSelection(object):
         clf.fit(x_train, y_train)
         print("best params for XGB: ", clf.best_params_)
         """
-        params = {'n_estimators': 10, 'max_depth': 4, 'min_child_weight': 100, 'reg_alpha': 0.9, 'reg_lambda:': 0.3}
+        #params = {'n_estimators': 14, 'max_depth': 4, 'min_child_weight': 100, 'reg_alpha': 0.9, 'reg_lambda:': 0.3}
         xgb_ = xgb.XGBClassifier(n_jobs=-1, **params)
-        model = xgb_.fit(x_train, y_train) 
-        self.plot_feature_importance(model, x_train, y_train, clf_name="xgb")    
-        features_rank = pd.DataFrame(list(model.get_booster().get_fscore().items()), index=self.features, columns=['importance']).sort_values('importance', ascending=False)
+        features_rank = self.generate_feature_importance(xgb_, x_train, y_train)    
+        #features_rank = pd.DataFrame(list(model.get_booster().get_fscore().items()), index=self.features, columns=['importance']).sort_values('importance', ascending=False)
         top_features = [features_rank.head(10).index]
         print(features_rank)
         #print(clf.best_score_)
@@ -243,8 +292,7 @@ class FeatureSelection(object):
         fig, ax = plt.subplots(figsize=(12,18))
         xgb.plot_importance(model, ax=ax)
         plt.savefig('feature_importance_xgb.png')
-        
-    
+        """
         train_xgb = xgb.DMatrix(data=x_train.loc[:,top_features], label=y_train)        
         model = xgb.train(params.items(), train_xgb, num_boost_round=15)
         print(model.get_score(importance_type="cover"))
@@ -255,7 +303,7 @@ class FeatureSelection(object):
         plt.savefig('output/feature_importance_xgb.png')
         print(mean_squared_error(y_cv, pred))
         model.save_model('feature_select.model')
-        """
+    
         models = [ExtraTreesClassifier(), RandomForestClassifier()]
         for model in models:
             model.fit(x_train, y_train)
@@ -267,17 +315,34 @@ class FeatureSelection(object):
         print('done')
 
 
-    def plot_feature_importance(self, clf, X_train, y_train, clf_name=""):     
+    def generate_feature_importance(self, clf, X_train, y_train, num_features=14, figsize=(14,8), title="Feature Importances"):     
+        from xgboost.core import XGBoostError
+        from lightgbm.sklearn import LightGBMError
+    
+        try: 
+            if not hasattr(clf, 'feature_importances_'):
+                clf.fit(X_train.values, y_train.values.ravel())
+
+                if not hasattr(clf, 'feature_importances_'):
+                    raise AttributeError("{} does not have feature_importances_ attribute".
+                                        format(clf.__class__.__name__))
+                    
+        except (XGBoostError, LightGBMError, ValueError):
+            clf.fit(X_train.values, y_train.values.ravel())
+        clf_name = clf.__class__.__name__ 
+        title = clf_name + " " + title
         feat_imp = pd.DataFrame({'importance':clf.feature_importances_})    
-        feat_imp['feature'] = X_train.columns
+        feat_imp['Features'] = X_train.columns
         feat_imp.sort_values(by='importance', ascending=False, inplace=True)
-        feat_imp = feat_imp.iloc[:top_n]
-        
+        feat_imp = feat_imp.iloc[:num_features]
         feat_imp.sort_values(by='importance', inplace=True)
-        feat_imp = feat_imp.set_index('feature', drop=True)
-        feat_imp.plot.barh(title=title, figsize=figsize)
-        plt.xlabel('Feature Importance Score')
-        plt.savefig(outpath+clf_name+'_feature_importance.png')
+        feat_imp = feat_imp.set_index('Features', drop=True)
+        feat_imp.plot.barh(title=title, figsize=figsize, color='#0b3fe8', legend=None)
+        plt.xlabel('Feature Importance')
+        plt.tight_layout()
+        plt.subplots_adjust(left=0.15, right=0.9)
+        plt.savefig(self.outpath+clf_name+'_feature_importance.png')
+        return feat_imp
 
 
     def Wrapper_features_selection(self):
@@ -328,8 +393,8 @@ if __name__ == '__main__':
     df_norm = data_obj.preprocess(fill_method='median', scale_method='normalize')
     #print(df_norm.describe())
     features_obj = FeatureSelection(data_obj)
-    filtered_features = features_obj.filter_features()
-    new_df = features_obj.generate_features()
+    filtered_features = features_obj.select_top_features()
+    new_df = features_obj.generate_features(filtered_features)
     #backward_selection_features = features_obj.Wrapper_features_selection()
     #print(backward_selection_features)
     features_obj.get_feature_importance()

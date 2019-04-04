@@ -39,6 +39,20 @@ class DataAnalysis(object):
         plt.savefig(self.outpath+'missing_nan.png')
         return null_counts
     
+    def analyze_corr_with_score(self):
+        df = self.data_obj.preprocess(fill_method='median', scale_method='none')
+        features_obj = FeatureSelection(self.data_obj)
+        train = features_obj.train
+        corr_with_y = train[features_obj.features].corrwith(train.y).abs().sort_values(ascending=False).to_frame(name='corr')
+        corr_with_y.index.name = 'features'
+        corr_with_y.reset_index(level=0, inplace=True)
+        corr_with_y['rank_corr'] = corr_with_y['corr'].rank()
+        reward_df = pd.read_csv(self.outpath+'_Ridge_Reward.csv')
+        reward_df['rank_reward'] = reward_df['reward'].rank()
+        rank_df = pd.merge(corr_with_y, reward_df, on='features')
+        top_rank_df = rank_df[(abs(rank_df['rank_corr']-rank_df['rank_reward']) < 30) & (rank_df['rank_reward'] > 0)]
+        top_rank_df.to_csv(self.outpath+'_Top_Ridge_Corr_Reward_Rank.csv')
+
     # overfitting data using Ridge
     def analyze_selected_features(self):
         df = self.data_obj.preprocess(fill_method='median', scale_method='none')
@@ -77,7 +91,7 @@ class DataAnalysis(object):
                     track_score[feature] = info['public_score']
                     print(feature, track_score[feature])
                     break
-        rewards_df = pd.DataFrame.from_dict(track_score, orient='index', columns=['reward']).sort_values(by='reward', ascending=False)
+        rewards_df = pd.DataFrame.from_dict(track_score, orient='index', columns=['features','reward']).sort_values(by='reward', ascending=False)
         rewards_df.to_csv(self.outpath+'_Ridge_Reward.csv')
         print(rewards_df)
 
@@ -149,6 +163,7 @@ class DataAnalysis(object):
 if __name__ == "__main__":
     cols = ['technical_20', 'technical_30', 'technical_29', 'technical_40']
     data_analysis = DataAnalysis(cols)
+    data_analysis.analyze_corr_with_score()
     data_analysis.analyze_selected_features()
     # unprocessed data
     #print(data_analysis.analyze_corr().head(6))
