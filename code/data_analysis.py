@@ -8,7 +8,7 @@ from sklearn.linear_model import LinearRegression, Ridge
 from sklearn import metrics
 import environment, dataset
 from dataset import Dataset
-from features import FeatureSelection
+from features import FeatureGenerator
 
 # captures analysis of the dataset
 # can be passed through Dataset object to preprocess
@@ -41,7 +41,7 @@ class DataAnalysis(object):
     
     def analyze_corr_with_score(self):
         df = self.data_obj.preprocess(fill_method='median', scale_method='none')
-        features_obj = FeatureSelection(self.data_obj)
+        features_obj = FeatureGenerator(self.data_obj)
         train = features_obj.train
         corr_with_y = train[features_obj.features].corrwith(train.y).abs().sort_values(ascending=False).to_frame(name='corr')
         corr_with_y.index.name = 'features'
@@ -56,14 +56,14 @@ class DataAnalysis(object):
     # overfitting data using Ridge
     def analyze_selected_features(self):
         df = self.data_obj.preprocess(fill_method='median', scale_method='none')
-        features_obj = FeatureSelection(self.data_obj)
+        features_obj = FeatureGenerator(self.data_obj)
         train = features_obj.train
         filtered_features = features_obj.filter_features()
         top_features = filtered_features[:10]
         top_features = features_obj.features
         track_score = {}
         for feature in top_features:
-            model = Ridge()
+            model = Ridge(fit_intercept=False, normalize=True)
             model.fit(np.array(train[feature].values).reshape(-1,1), train.y.values)
             rewards = {}    
             env = environment.make(df)
@@ -122,8 +122,26 @@ class DataAnalysis(object):
         return df.corrwith(y).sort_values(ascending=False)
 
     def analyze_outliers(self):
-        self.df['y'].describe()
-        return
+        df = self.data_obj.preprocess(fill_method='none', scale_method='none')
+        features_obj = FeatureGenerator(self.data_obj)
+        train = features_obj.train
+        y = train['y'].values
+        plt.hist(y, bins=70, color='#0b3fe8')
+        plt.xlabel('Returns')
+        plt.ylabel('Count')
+        plt.title('Empirical Return Distribution of The Output Value Y [VIX-Related Product]')
+        plt.savefig(self.outpath+'y_distribution.png')
+        plt.clf()
+
+        time_targets = train.groupby('timestamp')['y'].mean()
+        plt.figure(figsize=(12, 5))
+        plt.plot(time_targets)
+        plt.xlabel('Timestamps')
+        plt.ylabel('Mean of target')
+        plt.title('Change in target over time - Red lines = new timeperiod')
+        for i in timediff[timediff > 5].index:
+            plt.axvline(x=i, linewidth=0.25, color='red')
+    def anal
 
     def security_regression(self):
         train_data, test_data = self.env.train[self.cols+self.ind], self.env.test[self.cols+self.ind]
@@ -163,6 +181,7 @@ class DataAnalysis(object):
 if __name__ == "__main__":
     cols = ['technical_20', 'technical_30', 'technical_29', 'technical_40']
     data_analysis = DataAnalysis(cols)
+    data_analysis.analyze_outliers()
     data_analysis.analyze_corr_with_score()
     data_analysis.analyze_selected_features()
     # unprocessed data
@@ -177,6 +196,6 @@ if __name__ == "__main__":
     data_analysis.analyze_corr(df)
     #print(data_analysis.analyze_corr(df).head(6))
     #print(data_analysis.analyze_corr(df).tail(6))
-    features_obj = FeatureSelection(data_obj)
+    features_obj = FeatureGenerator(data_obj)
     clusters = features_obj.cluster_corr()
     print(clusters)

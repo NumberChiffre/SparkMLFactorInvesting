@@ -3,9 +3,6 @@ import numpy as np
 from sklearn.metrics import r2_score
 from dataset import Dataset
 
-#TODO: 
-# add FeatureSelection object into Environment, which is a fully preprocessed + engineered train/test data
-
 # turn dataset into usable features mimicking Kagglegym
 class Environment(object):
     def __init__(self, df=pd.DataFrame(), filepath="data/train.h5", split_ratio=0.6):
