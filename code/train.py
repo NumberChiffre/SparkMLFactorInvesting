@@ -94,7 +94,7 @@ class LinearModelGenerator(object):
         self.random_seed = random_seed
     
     def fit_recurrent(self):
-        model = Ridge(fit_intercept=False, normalize=True, n_jobs=-1)
+        model = Ridge(fit_intercept=False, n_jobs=-1)
         quantile_thresh, best_mse = 0.99, 1e15, 
         non_na_idx = train.dropna().index
         limitlen = len(train)*self.limit_size_train
@@ -134,7 +134,7 @@ class LinearModelGenerator(object):
             feature_idx = 0
             for feature2 in self.selected_features:
                 if len(feature2) < self.num_max_model_feature:
-                    clf = Ridge(fit_intercept=False, normalize=True) 
+                    clf = Ridge(fit_intercept=False) 
                     clf.fit(self.train[[feature1] + feature2], self.train['y'])
                     pred = clf.predict(self.train[[feature1] + feature2])
                     mse.append(mean_squared_error(self.train['y'], pred))
@@ -151,7 +151,7 @@ class LinearModelGenerator(object):
 
         # generate linear models based on a set of features combined based on low residuals
         for feature in self.selected_features:
-            clf = Ridge(fit_intercept=False, normalize=True) 
+            clf = Ridge(fit_intercept=False) 
             clf.fit(self.train[feature], self.train['y'])
             self.clfs.append(clf)
             print(feature)

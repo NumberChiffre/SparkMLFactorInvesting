@@ -87,7 +87,7 @@ class FeatureGenerator(object):
         top_features = self.features
         track_score = {}
         for feature in top_features:
-            model = Ridge(fit_intercept=False, normalize=True)
+            model = Ridge(fit_intercept=False)
             model.fit(np.array(train[feature].values).reshape(-1,1), train.y.values)
             rewards = {}    
             env = environment.make(df)
@@ -119,7 +119,8 @@ class FeatureGenerator(object):
         corr_with_y.index.name = 'features'
         corr_with_y.reset_index(level=0, inplace=True)
         corr_with_y['rank_corr'] = corr_with_y['corr'].rank()
-        reward_df = pd.read_csv(self.outpath+'_Ridge_Reward.csv')
+        reward_df = self.generate_single_reward()
+        #reward_df = pd.read_csv(self.outpath+'_Ridge_Reward.csv')
         reward_df['rank_reward'] = reward_df['reward'].rank()
         rank_df = pd.merge(corr_with_y, reward_df, on='features')
         top_rank_df = rank_df[(abs(rank_df['rank_corr']-rank_df['rank_reward']) < abs_rank_delta) & (rank_df['rank_reward'] > 0)]
