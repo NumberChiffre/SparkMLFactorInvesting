@@ -220,6 +220,13 @@ class FeatureGenerator(object):
 
     # run several Trees models in parallel to get feature importance ranks
     def get_feature_importance(self, split_ratio=0.6):
+        bds = [{'name': 'learning_rate', 'type': 'continuous', 'domain': (0, 1)},
+        {'name': 'gamma', 'type': 'continuous', 'domain': (0, 5)},
+        {'name': 'max_depth', 'type': 'discrete', 'domain': (1, 50)},
+        {'name': 'n_estimators', 'type': 'discrete', 'domain': (1, 300)},
+        {'name': 'min_child_weight', 'type': 'discrete', 'domain': (1, 10)}]
+
+
         params = {
                    '0':{'max_depth': range(3,9), 
                     'min_samples_leaf': range(50, 101), 

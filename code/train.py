@@ -31,12 +31,15 @@ class Model_Training(object):
         self.outpath = "output/"
 
     def fit(self, clf, params={}, early_stopping_rounds=10):
-        if len(params) == 0:
-            with open('data/'+clf.__class__.__name__+'_randomizedsearchcv_best_params.pickle','rb') as f:
+        params_file = 'data/'+clf.__class__.__name__+'_randomizedsearchcv_best_params.pickle'
+        if os.path.isfile(params_file):
+            with open(params_file,'rb') as f:
                 best_params = pickle.load(f)
         else:
             best_params = self.generate_best_params(clf, params)
-        clf.set_params(**best_params, n_jobs=-1)
+        best_params['n_jobs'] = int(-1)
+        print('using the following params:', pd.DataFrame.from_dict(best_params, orient='index', columns=['values']))
+        clf.set_params(**best_params)
         self.best_clf = clf.fit(self.X_train, self.y_train)
         dump(self.best_clf, 'model/'+clf.__class__.__name__+'.joblib')
 
