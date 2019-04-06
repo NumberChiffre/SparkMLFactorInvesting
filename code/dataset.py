@@ -18,11 +18,11 @@ def init_spark():
 class Dataset(object):
     def __init__(self, features=[], select_features=False, filepath="data/train.h5"):
         self.ind = ['id', 'timestamp']
-        self.features = features
         self.select_features = select_features
         self.filepath = filepath
         with pd.HDFStore(self.filepath, "r") as hfdata:
             self.fullset = hfdata.get("train")
+        self.features = [c for c in self.fullset.columns if c not in self.ind and c not in ['y']]
 
     def load_data(self):
         with pd.HDFStore(self.filepath, "r") as hfdata:
@@ -39,8 +39,7 @@ class Dataset(object):
     # best option to deal with this dataset due to a large amount of outliers
     def preprocess(self, fill_method='median', scale_method='normalize'):
         #self.load_data()
-        df = self.fullset
-        features = [c for c in df.columns if c not in self.ind and c not in ['y']]
+        df, features = self.fullset, self.features
 
         if fill_method == 'median':
             df_prep = df.fillna(df[features].dropna().median())
@@ -89,7 +88,6 @@ class Dataset(object):
 
     def signedExp(x):
         return np.sign(x) * np.exp(np.abs(x))
-
 
     def scale_feature(self, values):
         new_values = []

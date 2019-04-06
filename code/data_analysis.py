@@ -133,6 +133,7 @@ class DataAnalysis(object):
         plt.savefig(self.outpath+'y_distribution.png')
         plt.clf()
 
+        """
         time_targets = train.groupby('timestamp')['y'].mean()
         plt.figure(figsize=(12, 5))
         plt.plot(time_targets)
@@ -141,7 +142,7 @@ class DataAnalysis(object):
         plt.title('Change in target over time - Red lines = new timeperiod')
         for i in timediff[timediff > 5].index:
             plt.axvline(x=i, linewidth=0.25, color='red')
-    def anal
+        """
 
     def security_regression(self):
         train_data, test_data = self.env.train[self.cols+self.ind], self.env.test[self.cols+self.ind]

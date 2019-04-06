@@ -1,14 +1,19 @@
-import pandas as pd 
+import warnings
+warnings.filterwarnings(action='ignore',category = DeprecationWarning)
+warnings.simplefilter(action='ignore',category = DeprecationWarning)
+import pandas as pd
+pd.reset_option('all') 
 import numpy as np 
 import statsmodels.api as sm
-from sklearn.model_selection import GridSearchCV
+from skopt import BayesSearchCV
+from sklearn.model_selection import RandomizedSearchCV
 from sklearn.linear_model import LinearRegression, Ridge
 from sklearn.ensemble import ExtraTreesRegressor
 from sklearn.metrics import mean_squared_error
 import matplotlib
 matplotlib.use('PS')
 import matplotlib.pyplot as plt
-import pickle, random
+import pickle, random, os
 from joblib import load, dump
 import environment
 
@@ -27,26 +32,26 @@ class Model_Training(object):
 
     def fit(self, clf, params={}, early_stopping_rounds=10):
         if len(params) == 0:
-            with open('data/'+clf.__class__.__name__+'_gridsearchcv_best_params.pickle','rb') as f:
+            with open('data/'+clf.__class__.__name__+'_randomizedsearchcv_best_params.pickle','rb') as f:
                 best_params = pickle.load(f)
         else:
             best_params = self.generate_best_params(clf, params)
         clf.set_params(**best_params, n_jobs=-1)
-        self.best_clf = clf.fit(self.X_train, self.y_train, early_stopping_rounds=early_stopping_rounds)
+        self.best_clf = clf.fit(self.X_train, self.y_train)
         dump(self.best_clf, 'model/'+clf.__class__.__name__+'.joblib')
 
     def transform(self):
         pass
 
     def generate_best_params(self, clf, params, n_jobs=-1):
-        gridsearch_clf = GridSearchCV(clf, param_grid=params, cv=self.cv_indexes, n_jobs=n_jobs)
-        gridsearch_clf.fit(self.X_train, self.y_train)
-        best_params = gridsearch_clf.best_params_
-        with open('data/'+clf.__class__.__name__+'_gridsearchcv_best_params.pickle','wb') as f:
+        search_clf = RandomizedSearchCV(clf, param_distributions=params, scoring='neg_mean_squared_error', cv=self.cv_indexes, n_iter=25, n_jobs=n_jobs)
+        search_clf.fit(self.X_train, self.y_train)
+        dump(search_clf, 'model/'+clf.__class__.__name__+'_randomizedsearchcv.joblib')
+        best_params = search_clf.best_params_
+        with open('data/'+clf.__class__.__name__+'_randomizedsearchcv_best_params.pickle','wb') as f:
             pickle.dump(best_params, f)
         print(best_params)
-        print(gridsearch_clf.best_score_)
-        return best_params
+        print(search_clf.best_score_)
 
     def generate_feature_importance(self, num_features=14, figsize=(13,8), title="Feature Importances"):     
         X_train, y_train = self.X_train, self.y_train
@@ -81,7 +86,7 @@ class Model_Training(object):
 
 # assuming that the Dataset object has not used preprocess()
 # training linear models by taking a small subset of features with the lowest residuals
-# aiming to reduce the potentials of overfitted models
+# aiming to reduce the potentials of overfitted models by combining them into Tree Models
 class LinearModelGenerator(object):
     def __init__(self, train, features, num_top_models=10, num_selected_features=20, num_max_model_feature=2, random_seed=124124):
         self.train = train
@@ -94,7 +99,7 @@ class LinearModelGenerator(object):
         self.random_seed = random_seed
     
     def fit_recurrent(self):
-        model = Ridge(fit_intercept=False, n_jobs=-1)
+        model = Ridge(fit_intercept=False)
         quantile_thresh, best_mse = 0.99, 1e15, 
         non_na_idx = train.dropna().index
         limitlen = len(train)*self.limit_size_train
@@ -163,15 +168,18 @@ class LinearModelGenerator(object):
         for feature in self.selected_features:
             self.train[str(feature)+'_'+self.clfs[idx].__class__.__name__] = self.clfs[idx].predict(self.train[feature])
             idx += 1
+        self.features = [c for c in self.train.columns if c not in ['timestamp', 'id', 'y']]
         return self.train
     
     def fit_transform(self):
         self.fit()
         return self.transform()
     
+    # using LGBM + ETR to generate top models with checks on residual training
     def generate_top_models(self):
         residuals, top_residuals = [], []
-        lm_generator_train = self.fit_transform()
+        lm_generator_train = self.fit_transform()[self.features]
+        total_features = lm_generator_train.columns
         clf = ExtraTreesRegressor(n_estimators=140, max_depth=4, n_jobs=-1)
         clf.fit(lm_generator_train, self.train['y'])
 
@@ -185,7 +193,18 @@ class LinearModelGenerator(object):
         target_residuals = np.argmin(np.array(top_residuals).T, axis=1)
         clf_selection = ExtraTreesRegressor(n_estimators=140, max_depth=4, n_jobs=-1)
         clf_selection.fit(lm_generator_train, target_residuals)
-        feature_importance = pd.DataFrame(clf_selection.feature_importances_, index=lm_generator_train.columns).sort_values(by=[0]).tail(self.num_selected_features)
+        feature_importance = pd.DataFrame(clf_selection.feature_importances_, index=total_features).sort_values(by=[0], ascending=False).head(self.num_selected_features)
         dump(clf_selection, 'model/'+clf_selection.__class__.__name__+'_lm_trees.joblib')
+        self.clf_selection = clf_selection
+        self.total_features = total_features
         print(feature_importance)
         return feature_importance
+    
+    def load_top_models(self):
+        if os.path.isfile('model/ExtraTreesRegressor_lm_trees.joblib'):
+            clf = load('model/ExtraTreesRegressor_lm_trees.joblib')
+            feature_importance = pd.DataFrame(clf.feature_importances_, index=self.total_features).sort_values(by=[0], ascending=False).head(self.num_selected_features)
+        else:
+            feature_importance = self.generate_top_models()
+            clf = self.clf_selection
+        
