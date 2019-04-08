@@ -26,7 +26,7 @@ class Model_Training(object):
         timesplit = unique_timestamp[unique_idx]
         self.train = train
         self.features = features
-        self.cv_indexes = [(train.index[(train.timestamp >= timesplit*(split-1)) & (train.timestamp < timesplit*split)], train.index[train.timestamp >= timesplit*split]) for split in range(1, num_splits)]
+        self.cv_indexes = [(train.index[(train.timestamp >= timesplit*(split-1)) & (train.timestamp < timesplit*split)], train.index[(train.timestamp >= timesplit*split) & (train.timestamp < timesplit*(1+split))]) for split in range(1, num_splits)]
         self.cv_indexes.append((train.index[(train.timestamp >= 0) & (train.timestamp < timesplit)], train.index[train.timestamp >= timesplit*2]))
         self.X_train = train[features].astype('float32')
         self.y_train = train['y'].astype('float32')
@@ -38,9 +38,28 @@ class Model_Training(object):
         clf.set_params(**best_params)
         self.best_clf = clf.fit(self.X_train, self.y_train)
         dump(self.best_clf, 'model/'+clf.__class__.__name__+'.joblib')
-    
+
+    def load_best_params(self, clf, params={}):
+        params_file = 'data/'+clf.__class__.__name__+'_randomizedsearchcv_best_params.pickle'
+        if os.path.isfile(params_file):
+            with open(params_file,'rb') as f:
+                best_params = pickle.load(f)
+        else:
+            best_params = self.generate_best_params(clf, params)
+        return best_params
+
+    def generate_best_params(self, clf, params, n_jobs=-1):
+        search_clf = RandomizedSearchCV(clf, param_distributions=params, scoring='neg_mean_squared_error', cv=self.cv_indexes, n_iter=25, n_jobs=n_jobs)
+        search_clf.fit(self.X_train, self.y_train)
+        dump(search_clf, 'model/'+clf.__class__.__name__+'_randomizedsearchcv.joblib')
+        best_params = search_clf.best_params_
+        with open('data/'+clf.__class__.__name__+'_randomizedsearchcv_best_params.pickle','wb') as f:
+            pickle.dump(best_params, f)
+        print(best_params)
+        print(search_clf.best_score_)
+
     # for each set of train-validation data, we generate the cumulative reward score for each classifier
-    def cross_validate_multiple(self, clfs, features_dict={}):
+    def cross_validate_multiple(self, clfs, params_list=[], features_dict={}):
         i = 0
         for train_cv_indexes in self.cv_indexes:
 
@@ -51,15 +70,15 @@ class Model_Training(object):
             for clf in clfs:
                 # get params for the given classifier
                 # train the classifier using the iterated train/validation indexes
-                best_params = self.load_best_params(clf, params)
+                best_params = self.load_best_params(clf, params_list[i])
                 print('Using the following params: \n', pd.DataFrame.from_dict(best_params, orient='index', columns=['values']))
                 clf.set_params(**best_params)
-                X_train, y_train = self.X_train.ix[train_cv_indexes[i][0], :], self.y_train.ix[train_cv_indexes[i][0], :]
+                X_train, y_train = self.X_train.ix[train_cv_indexes[0], :], self.y_train.ix[train_cv_indexes[0]]
                 clf.fit(X_train, y_train)
                 dump(clf, 'model/'+clf.__class__.__name__+'train_sub'+str(i)+'.joblib')
                 
                 # set up environment for testingg
-                env = environment.make(self.train, train_cv_indexes[i], use_cv=True, features=self.features)
+                env = environment.make(self.train, train_cv_indexes, use_cv=True, features=self.features)
                 observation = env.reset()
 
                 y_actual_list, y_pred_list = [], []
@@ -102,43 +121,7 @@ class Model_Training(object):
             plt.xlim(timestamp_dict[dict_key][0], timestamp_dict[dict_key][-1])
             plt.savefig(self.outpath+'cum_rewards_cv'+str(i+1)+'.png')       
             i += 1
-
-
-    def predict_fit(self, clf)
-        train_file = 'model/'+clf.__class__.__name__+'.joblib'
-        if os.path.isfile(train_file):
-            clf = load(train_file)
-        else:
-            self.fit(clf)
-            clf = self.best_clf
-
-        # init environment to test performance
-        y_actual_list = []
-        y_pred_list = []
-        overall_reward_list = []
-        ts_list = [] 
-        env = environment.make()
-        observation = env.reset()
             
-    def load_best_params(self, clf, params={}):
-        params_file = 'data/'+clf.__class__.__name__+'_randomizedsearchcv_best_params.pickle'
-        if os.path.isfile(params_file):
-            with open(params_file,'rb') as f:
-                best_params = pickle.load(f)
-        else:
-            best_params = self.generate_best_params(clf, params)
-        return best_params
-
-    def generate_best_params(self, clf, params, n_jobs=-1):
-        search_clf = RandomizedSearchCV(clf, param_distributions=params, scoring='neg_mean_squared_error', cv=self.cv_indexes, n_iter=25, n_jobs=n_jobs)
-        search_clf.fit(self.X_train, self.y_train)
-        dump(search_clf, 'model/'+clf.__class__.__name__+'_randomizedsearchcv.joblib')
-        best_params = search_clf.best_params_
-        with open('data/'+clf.__class__.__name__+'_randomizedsearchcv_best_params.pickle','wb') as f:
-            pickle.dump(best_params, f)
-        print(best_params)
-        print(search_clf.best_score_)
-
     def generate_feature_importance(self, num_features=14, figsize=(13,8), title="Feature Importances"):     
         X_train, y_train = self.X_train, self.y_train
         """
