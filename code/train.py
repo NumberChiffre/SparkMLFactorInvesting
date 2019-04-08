@@ -24,27 +24,110 @@ class Model_Training(object):
         unique_timestamps = len(unique_timestamp)
         unique_idx = int(unique_timestamps/num_splits)
         timesplit = unique_timestamp[unique_idx]
+        self.train = train
+        self.features = features
         self.cv_indexes = [(train.index[(train.timestamp >= timesplit*(split-1)) & (train.timestamp < timesplit*split)], train.index[train.timestamp >= timesplit*split]) for split in range(1, num_splits)]
         self.cv_indexes.append((train.index[(train.timestamp >= 0) & (train.timestamp < timesplit)], train.index[train.timestamp >= timesplit*2]))
         self.X_train = train[features].astype('float32')
         self.y_train = train['y'].astype('float32')
         self.outpath = "output/"
+    
+    def fit(self, clf, params={}, features_dict={}, multiple_models=False):
+        best_params = self.load_best_params(clf, params)
+        print('Using the following params: \n', pd.DataFrame.from_dict(best_params, orient='index', columns=['values']))
+        clf.set_params(**best_params)
+        self.best_clf = clf.fit(self.X_train, self.y_train)
+        dump(self.best_clf, 'model/'+clf.__class__.__name__+'.joblib')
+    
+    # for each set of train-validation data, we generate the cumulative reward score for each classifier
+    def cross_validate_multiple(self, clfs, features_dict={}):
+        i = 0
+        for train_cv_indexes in self.cv_indexes:
 
-    def fit(self, clf, params={}, early_stopping_rounds=10):
+            # produce results to generate cumulative reward charts for each set of indexes
+            y_actual_dict, y_pred_dict = {}, {}
+            cum_reward_dict, timestamp_dict = {}, {}
+
+            for clf in clfs:
+                # get params for the given classifier
+                # train the classifier using the iterated train/validation indexes
+                best_params = self.load_best_params(clf, params)
+                print('Using the following params: \n', pd.DataFrame.from_dict(best_params, orient='index', columns=['values']))
+                clf.set_params(**best_params)
+                X_train, y_train = self.X_train.ix[train_cv_indexes[i][0], :], self.y_train.ix[train_cv_indexes[i][0], :]
+                clf.fit(X_train, y_train)
+                dump(clf, 'model/'+clf.__class__.__name__+'train_sub'+str(i)+'.joblib')
+                
+                # set up environment for testingg
+                env = environment.make(self.train, train_cv_indexes[i], use_cv=True, features=self.features)
+                observation = env.reset()
+
+                y_actual_list, y_pred_list = [], []
+                cum_reward_list, timestamp_dict = [], []
+                
+                while True: 
+                    observation.target.y = clf.predict(observation.features)
+                    target = observation.target
+                    timestamp = observation.features["timestamp"][0]
+                    actual_y = list(test[test["timestamp"] == timestamp]["y"].values)
+                    observation, reward, done, info = env.step(target)
+                    
+                    pred_y = list(target.y.values)
+                    y_actual_dict.extend(actual_y)
+                    y_pred_dict.extend(pred_y)
+                    cum_reward = environment.get_reward(np.array(y_actual_list), np.array(y_pred_list))
+                    cum_reward_dict.append(overall_reward)
+                    timestamp_dict.append(timestamp)
+
+                    # save results to produce charts for each classifier
+                    if done:
+                        print(info)
+                        y_actual_dict[clf.__class__.__name__] = y_actual_list
+                        y_pred_dict[clf.__class__.__name__] = y_pred_list
+                        cum_reward_dict[clf.__class__.__name__] = cum_reward_list
+                        timestamp_dict[clf.__class__.__name__] = timestamp_list
+                        break
+
+            # for the given set of train-validation indexes, print their actual reward scores
+            fig = plt.figure(figsize=(12, 6))
+            colors = iter(plt.cm.rainbow(np.linspace(0,1,len(cls))))
+            for clf in cls:
+                dict_key = clf.__class__.__name__
+                plt.plot(timestamp_dict[dict_key], cum_reward_dict[dict_key], c=next(colors), label=dict_key)
+            plt.plot(timestamp_dict[dict_key], [0]*len(timestamp_dict[dict_key]), c='red')
+            start_train, end_train = train_cv_indexes[0][0][0], train_cv_indexes[0][0][-1]
+            start_valid, end_valid = train_cv_indexes[0][1][0], train_cv_indexes[0][1][-1]
+            plt.title("Cross-Validation Set #"+str(i+1)+": "+"Train Timestamps["+str(start_train)+"-"+str(end_train)+"], Test Timestamps["+str(start_valid)+"-"+str(end_valid)+"]")
+            plt.ylim([-0.04, 0.04])
+            plt.xlim(timestamp_dict[dict_key][0], timestamp_dict[dict_key][-1])
+            plt.savefig(self.outpath+'cum_rewards_cv'+str(i+1)+'.png')       
+            i += 1
+
+
+    def predict_fit(self, clf)
+        train_file = 'model/'+clf.__class__.__name__+'.joblib'
+        if os.path.isfile(train_file):
+            clf = load(train_file)
+        else:
+            self.fit(clf)
+            clf = self.best_clf
+
+        # init environment to test performance
+        y_actual_list = []
+        y_pred_list = []
+        overall_reward_list = []
+        ts_list = [] 
+        env = environment.make()
+        observation = env.reset()
+            
+    def load_best_params(self, clf, params={}):
         params_file = 'data/'+clf.__class__.__name__+'_randomizedsearchcv_best_params.pickle'
         if os.path.isfile(params_file):
             with open(params_file,'rb') as f:
                 best_params = pickle.load(f)
         else:
             best_params = self.generate_best_params(clf, params)
-        best_params['n_jobs'] = int(-1)
-        print('using the following params:', pd.DataFrame.from_dict(best_params, orient='index', columns=['values']))
-        clf.set_params(**best_params)
-        self.best_clf = clf.fit(self.X_train, self.y_train)
-        dump(self.best_clf, 'model/'+clf.__class__.__name__+'.joblib')
-
-    def transform(self):
-        pass
+        return best_params
 
     def generate_best_params(self, clf, params, n_jobs=-1):
         search_clf = RandomizedSearchCV(clf, param_distributions=params, scoring='neg_mean_squared_error', cv=self.cv_indexes, n_iter=25, n_jobs=n_jobs)
@@ -100,7 +183,8 @@ class LinearModelGenerator(object):
         self.selected_features = []
         self.clfs = []
         self.random_seed = random_seed
-    
+        self.min_y_cut, self.max_y_cut = -0.086, 0.086
+
     def fit_recurrent(self):
         model = Ridge(fit_intercept=False)
         quantile_thresh, best_mse = 0.99, 1e15, 
@@ -166,13 +250,13 @@ class LinearModelGenerator(object):
         print('Finished generating linear models through LinearModelGenerator')
 
     # add these linear models as trees for ExtraTreesRegressor model
-    def transform(self):
+    def transform(self, df):
         idx = 0
         for feature in self.selected_features:
-            self.train[str(feature)+'_'+self.clfs[idx].__class__.__name__] = self.clfs[idx].predict(self.train[feature])
+            df[str(feature)+'_'+self.clfs[idx].__class__.__name__] = self.clfs[idx].predict(df[feature])
             idx += 1
-        self.features = [c for c in self.train.columns if c not in ['timestamp', 'id', 'y']]
-        return self.train
+        self.features = [c for c in df.columns if c not in ['timestamp', 'id', 'y']]
+        return df
     
     def fit_transform(self):
         self.fit()
@@ -181,7 +265,7 @@ class LinearModelGenerator(object):
     # using LGBM + ETR to generate top models with checks on residual training
     def generate_top_models(self):
         residuals, top_residuals = [], []
-        lm_generator_train = self.fit_transform()[self.features]
+        lm_generator_train = self.fit_transform(df=self.train)[self.features]
         total_features = lm_generator_train.columns
         clf = ExtraTreesRegressor(n_estimators=140, max_depth=4, n_jobs=-1)
         clf.fit(lm_generator_train, self.train['y'])
@@ -210,4 +294,44 @@ class LinearModelGenerator(object):
         else:
             feature_importance = self.generate_top_models()
             clf = self.clf_selection
-        
+
+        env = environment.make()
+        o = env.reset()
+        y_actual_list = []
+        y_pred_list = []
+        r1_overall_reward_list = []
+        ts_list = []
+        idx = 0
+        while True:
+            idx += 1
+            test = o.features
+            features = [x for x in test.columns if x not in ['timestamp', 'id', 'y']]
+            timestamp = o.features.timestamp[0]
+            pred = o.target
+            test = self.transform(test[features])
+            selected_pred = clf.predict_proba(test.loc[:, features+self.selected_features])
+            pred['y'] = selected_pred.clip(self.min_y_cut, self.max_y_cut)
+            
+            o, reward, done, info = env.step(pred)
+            if reward > 0:
+                countplus += 1
+            
+            if indice % 100 == 0:
+                print(indice, countplus, reward, np.array(list(rewards.values())).mean(), info)
+            
+            actual_y = list(test[test["timestamp"] == timestamp]["y"].values)
+            y_actual_list.extend(actual_y)
+            y_pred_list.extend(pred['y'])
+            overall_reward = get_reward(np.array(y_actual_list), np.array(y_pred_list))
+            r1_overall_reward_list.append(overall_reward)
+            ts_list.append(timestamp)
+
+            if done:
+                fig = plt.figure(figsize=(12, 6))
+                plt.plot(ts_list, r1_overall_reward_list, c='blue')
+                plt.plot(ts_list, [0]*len(ts_list), c='red')
+                plt.title("Cumulative R value change for LinearML model")
+                plt.ylim([-0.04,0.04])
+                plt.savefig('output/linearML_rewards.png')
+                print(info)
+                break

@@ -5,6 +5,7 @@ import numpy as np
 import re
 import statsmodels.api as sm
 from scipy import stats
+import math
 from sklearn.linear_model import LassoCV, Ridge
 from sklearn.ensemble import ExtraTreesRegressor
 import os
@@ -15,11 +16,6 @@ import environment
 from dataset import Dataset
 from train import Model_Training, LinearModelGenerator
 
-
-def get_reward(y_true, y_fit):
-    R2 = 1 - np.sum((y_true - y_fit)**2) / np.sum((y_true - np.mean(y_true))**2)
-    R = np.sign(R2) * math.sqrt(abs(R2))
-    return(R)
 
 # use the Dataset object to perform feature selection
 class FeatureGenerator(object):
@@ -97,7 +93,7 @@ class FeatureGenerator(object):
 
     # generate single feature linear models to assess their reward score
     def generate_single_reward(self):
-        train = self.train
+        train, test = self.train, self.test
         top_features = self.features
         track_score = {}
         for feature in top_features:
@@ -115,13 +111,13 @@ class FeatureGenerator(object):
                 observation.target.y = model.predict(test_x).clip(self.min_y_cut, self.max_y_cut)
                 target = observation.target
                 timestamp = observation.features["timestamp"][0]
-                actual_y = list(train[train["timestamp"] == timestamp]["y"].values)
+                actual_y = list(test[test["timestamp"] == timestamp]["y"].values)
                 observation, reward, done, info = env.step(target)
 
                 pred_y = list(target.y.values)
                 y_actual_list.extend(actual_y)
                 y_pred_list.extend(pred_y)
-                overall_reward = get_reward(np.array(y_actual_list), np.array(y_pred_list))
+                overall_reward = environment.get_reward(np.array(y_actual_list), np.array(y_pred_list))
                 overall_reward_list.append(overall_reward)
                 ts_list.append(timestamp)
                 if done:
@@ -220,19 +216,12 @@ class FeatureGenerator(object):
 
     # run several Trees models in parallel to get feature importance ranks
     def get_feature_importance(self, split_ratio=0.6):
-        bds = [{'name': 'learning_rate', 'type': 'continuous', 'domain': (0, 1)},
-        {'name': 'gamma', 'type': 'continuous', 'domain': (0, 5)},
-        {'name': 'max_depth', 'type': 'discrete', 'domain': (1, 50)},
-        {'name': 'n_estimators', 'type': 'discrete', 'domain': (1, 300)},
-        {'name': 'min_child_weight', 'type': 'discrete', 'domain': (1, 10)}]
-
-
-        params = {
-                   '0':{'max_depth': range(3,9), 
+        params = [
+                   {'max_depth': range(3,9), 
                     'min_samples_leaf': range(50, 101), 
                     'n_estimators': range(100,201)
                    },
-                   '1':{'max_depth': range(3,9),
+                   {'max_depth': range(3,9),
                     'min_child_weight': range(50, 101),
                     'reg_lambda:': [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8],
                     'reg_alpha': [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8],
@@ -241,7 +230,7 @@ class FeatureGenerator(object):
                     'n_estimators': range(100, 201),
                     'learning_rate': [0.01, 0.05, 0.1]
                    },
-                   '2':{'num_leaves': range(50, 101),
+                   {'num_leaves': range(50, 101),
                     'feature_fraction': [x/10 for x in range(4, 9)],
                     'bagging_fraction': [x/10 for x in range(5, 8)],
                     'learning_rate': [0.01, 0.05, 0.1, 0.15, 0.2],
@@ -250,47 +239,26 @@ class FeatureGenerator(object):
                     'reg_lambda:': [x/10 for x in range(0, 10)],
                     'reg_alpha': [x/10 for x in range(0, 10)]
                    }
-        }
-        """
-        params = {
-                   '0':{'max_depth': range(4, 9), 
-                    'min_samples_leaf':range(50, 100), 
-                    'n_estimators': stats.randint(100, 200)
-                   },
-                   '1':{'max_depth': stats.randint(3, 6),
-                    'min_child_weight': stats.randint(50, 100),
-                    'reg_lambda:': stats.uniform(0.01, 0.3),
-                    'reg_alpha': stats.uniform(0.01, 0.3),
-                    'colsample_bytree': stats.uniform(0.4, 0.9),
-                    'subsample': stats.uniform(0.3, 0.9),
-                    'n_estimators': stats.randint(100, 200),
-                    'learning_rate': stats.uniform(0.01, 0.2)
-                   },
-                   '2':{'num_leaves': stats.randint(50, 100),
-                    'feature_fraction': stats.uniform(0.4, 0.8),
-                    'bagging_fraction': stats.uniform(0.5, 0.7),
-                    'learning_rate': stats.uniform(0.01, 0.2),
-                    'n_estimators': stats.randint(100, 200),
-                    'max_depth': stats.randint(3, 6),
-                    'reg_lambda:': stats.uniform(0.01, 0.3),
-                    'reg_alpha': stats.uniform(0.01, 0.3)
-                   }
-        }
-        """
+        ]
         training = Model_Training(self.train, self.features)
-        models = [ExtraTreesRegressor(n_jobs=-1), xgb.XGBRegressor(n_jobs=-1), lgb.LGBMRegressor(n_jobs=-1)]
+        models = [ExtraTreesRegressor(n_jobs=-1), xgb.XGBRegressor(n_jobs=-1)]
         num_features = 20
         title = 'Top ' + str(num_features) + ' Features [60 percent of Training + 40 percent for CV]'
         i = 0
+
+        """
+        # generate a subset of models using different features
         for clf in models:
-            if i != 0:
-                print(params[str(i)])
-                training.fit(clf, params=params[str(i)])
-                features_rank = training.generate_feature_importance(num_features=num_features, title=title)
-                features_rank.to_csv(self.outpath+clf.__class__.__name__+'_feature_importance.csv')
+            print(params[i])
+            training.fit(clf, params=params[i])
+            features_rank = training.generate_feature_importance(num_features=num_features, title=title)
+            features_rank.to_csv(self.outpath+clf.__class__.__name__+'_feature_importance.csv')
             i += 1
         print('Finished generating feature importance')
-
+        """
+        
+        # check on the cross-validation..
+        training.cross_validate_multiple(models)
 
     def Wrapper_features_selection(self):
         features = self.features
