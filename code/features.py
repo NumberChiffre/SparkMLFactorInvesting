@@ -185,7 +185,7 @@ class FeatureGenerator(object):
         features_df['20_30'] = features_df['technical_20'] - features_df['technical_30']
         mkt_20_30 = features_df[['timestamp', '20_30']].groupby('timestamp')['20_30'].mean()
         features_df['mkt_20_30'] = mkt_20_30[features_df['timestamp']].values
-        features_df['excess_20_30'] = features_df['20_30'] - features_df['mkt_20_30']   
+        features_df['premium_20_30'] = features_df['20_30'] - features_df['mkt_20_30']   
         vol_20_30 = features_df[['timestamp', '20_30']].groupby('timestamp')['20_30'].std() * np.sqrt(255.)
         vol_20_30 = vol_20_30.rolling(window=2, min_periods=1).mean()
         features_df['vol_20_30'] = vol_20_30[features_df['timestamp']].values
@@ -194,7 +194,7 @@ class FeatureGenerator(object):
         features_df[[c+'_demean' for c in selected_features]] = features_df[['timestamp']+selected_features].groupby('timestamp')[selected_features].apply(lambda x:x-x.mean())
 
         # adding lag features
-        for lag in [1,5,10,20]:
+        for lag in [5]:
             features_df[[c+'_lag'+str(lag) for c in selected_features]] = features_df[['id']+selected_features].groupby('id')[selected_features].shift(lag)
             features_df[[c+'_lagdiff'+str(lag) for c in selected_features]] = features_df[['id']+selected_features].groupby('id')[selected_features].diff(lag)
             features_df[[c+'_rolling'+str(lag) for c in selected_features]] = features_df[['id']+selected_features].groupby('id')[selected_features].rolling(lag, 1).mean().reset_index(0, drop=True)
@@ -209,8 +209,8 @@ class FeatureGenerator(object):
         for lag in [12,26]:
             features_df['y_ewm_'+str(lag)+'_mean'] = features_df.groupby('id')['y'].apply(lambda x:x.ewm(span=lag).mean())
         features_df['y_macd_mean'] = features_df['y_ewm_12_mean'] - features_df['y_ewm_26_mean']
-        self.features = [c for c in features_df if c not in self.ind + ['y'] + selected_features]
-        self.train = features_df
+        self.features = [c for c in features_df if c not in self.ind + ['y'] + selected_features and 'ewm' not in c]
+        self.train = features_df.fillna(0)
         return self.train
 
 
@@ -236,8 +236,8 @@ class FeatureGenerator(object):
                     'learning_rate': [0.01, 0.05, 0.1, 0.15, 0.2],
                     'n_estimators': range(100, 201),
                     'max_depth': range(3,9),
-                    'reg_lambda:': [x/10 for x in range(0, 10)],
-                    'reg_alpha': [x/10 for x in range(0, 10)]
+                    'colsample_bytree': [x/10 for x in range(3, 10)],
+                    'subsample': [x/10 for x in range(5, 10)]
                    }
         ]
         training = Model_Training(self.train, self.features)
