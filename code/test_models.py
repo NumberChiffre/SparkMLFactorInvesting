@@ -16,11 +16,12 @@ class Model_Testing(object):
         self.test = feature_obj.test
         self.feature_obj = feature_obj
         self.lm_generator = lm_generator
-        self.models = [xgb.XGBRegressor(n_jobs=-1), Ridge(), ExtraTreesRegressor(n_jobs=-1)]
+        self.models = [xgb.XGBRegressor(n_jobs=-1), ExtraTreesRegressor(n_jobs=-1), Ridge()]
         self.num_top_features = 14
         self.modelpath = 'model/'   
         self.outpath = 'output/'
-
+        self.datapath = 'data/'
+        
     # create new testing features based on the training set
     # another way is to transform all features during training, while ensuring no testing set was touched
     def generate_test_models(self):
@@ -113,12 +114,17 @@ class Model_Testing(object):
         colors = iter(plt.cm.rainbow(np.linspace(0,1,len(self.cum_reward_dict))))
         for model in self.cum_reward_dict:
             plt.plot(self.timestamp_dict[model], self.cum_reward_dict[model], c=next(colors), label=str(model))
-        plt.plot(self.timestamp_dict[model], lm_data, c=next(colors), label="ExtraTrees_LightGBM")        
+        with open(self.datapath+'lm_trees_cum_scores_data.pickle', 'rb') as f:
+            lm_data = pickle.load(f)
+        with open(self.datapath+'lm_trees_cum_scores_data_ts.pickle', 'rb') as f:
+            lm_ts = pickle.load(f)
+        plt.plot(lm_ts, lm_data, c=next(colors), label="ExtraTrees_LightGBM")        
         plt.plot(self.timestamp_dict[model], [0]*len(self.timestamp_dict[model]), c=next(colors))
         plt.title("Out-Of-Sample Reward Performance: "+"Train Timestamps["+str(int(self.start_train))+" - "+str(int(self.end_train))+"], Test Timestamps["+str(int(self.start_test))+" - "+str(int(self.end_test))+"]")
         plt.ylim([-0.06, 0.06])
         plt.xlim(self.timestamp_dict[model][0], self.timestamp_dict[model][-1])
         plt.xlabel('Timestamps')
+        plt.ylabel('Rewards')
         plt.legend(framealpha=1, frameon=True)
         plt.savefig(self.outpath+'test_cum_rewards.png')      
         plt.clf() 
@@ -127,7 +133,9 @@ if __name__ == '__main__':
     from multiprocessing import set_start_method
     set_start_method("forkserver")  
     data_obj = Dataset()
+    features = data_obj.features
     df_norm = data_obj.preprocess(fill_method='median', scale_method='none')
     feature_obj = FeatureGenerator(data_obj)
-    model_testing = Model_Testing(feature_obj)
+    lm_generator = LinearModelGenerator(train=df_norm, features=features, num_selected_features=20)
+    model_testing = Model_Testing(feature_obj, lm_generator)
     model_testing.generate_test_models()

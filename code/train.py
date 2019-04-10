@@ -361,7 +361,7 @@ class LinearModelGenerator(object):
         clf_name = clf_selection.__class__.__name__
         feature_importance = pd.DataFrame(clf_selection.feature_importances_, index=total_features).sort_values(by=[0], ascending=False).head(self.num_selected_features)
         feature_importance.to_csv('output/'+clf_name+'lm_trees_feature_importance.csv')
-        dump(clf_selection, 'model/'+clf_name'_lm_trees.joblib')
+        dump(clf_selection, 'model/'+clf_name+'_lm_trees.joblib')
         self.clf_selection = clf_selection
         self.total_features = total_features
         print(feature_importance)

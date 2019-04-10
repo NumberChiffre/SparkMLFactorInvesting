@@ -122,15 +122,25 @@ class DataAnalysis(object):
         return df.corrwith(y).sort_values(ascending=False)
 
     def analyze_outliers(self):
-        df = self.data_obj.preprocess(fill_method='none', scale_method='none')
-        features_obj = FeatureGenerator(self.data_obj)
-        train = features_obj.train
+        train = environment.make().train
         y = train['y'].values
+        fig = plt.figure(figsize=(12, 6))
         plt.hist(y, bins=70, color='#0b3fe8')
         plt.xlabel('Returns')
         plt.ylabel('Count')
         plt.title('Empirical Return Distribution of The Output Value Y [VIX-Related Product]')
         plt.savefig(self.outpath+'y_distribution.png')
+        plt.clf()
+
+        fig = plt.figure(figsize=(12, 6))
+        plt.xlabel('Timestamps')
+        plt.title('Output Value of Y and Timestamp')
+        train = environment.make().fullset
+        plt.plot(list(train['timestamp'].unique()), train.groupby('timestamp')['y'].mean(), c='blue', label='y')
+        plt.plot(list(train['timestamp'].unique()), train.groupby('timestamp')['y'].std(), c='red', label='std(y)')
+        plt.xlim(list(train['timestamp'].unique())[0], list(train['timestamp'].unique())[-1])
+        plt.legend(framealpha=1, frameon=True)
+        plt.savefig(self.outpath+'y_return_comparison.png')
         plt.clf()
 
         """

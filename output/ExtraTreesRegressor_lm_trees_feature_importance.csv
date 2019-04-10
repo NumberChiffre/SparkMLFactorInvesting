@@ -1,0 +1,142 @@
+,0
+y,0.9936679197162251
+technical_22,0.005217929867618087
+timestamp,0.00042957861367982393
+technical_35,0.00019264551079304864
+technical_27,0.0001387654748860856
+technical_36,0.00010542218101420907
+technical_19,7.385587692523492e-05
+technical_14,6.0295450943691416e-05
+technical_40,1.7220103858905e-05
+"['fundamental_21', 'fundamental_12']_Ridge",1.251223032458564e-05
+technical_21,1.1709191519038881e-05
+technical_34,1.1566650871499117e-05
+fundamental_21,9.938431799937523e-06
+technical_30,8.24756789419841e-06
+technical_2,5.153474620856478e-06
+"['fundamental_61', 'fundamental_29']_Ridge",4.767833774765902e-06
+technical_20,4.3323216747468294e-06
+technical_24,3.421288158666977e-06
+technical_44,1.7665558479829377e-06
+technical_6,1.6399319783446288e-06
+technical_17,1.4559281953960768e-06
+"['technical_14', 'technical_13']_Ridge",1.2480142366210479e-06
+technical_32,1.2201370737372874e-06
+technical_43,1.1356238203588648e-06
+fundamental_38,1.0672762112650262e-06
+fundamental_19,1.0121550406697485e-06
+id,9.908689662378682e-07
+fundamental_28,8.431473422305843e-07
+fundamental_0,7.970701475963821e-07
+fundamental_34,7.516372609934513e-07
+fundamental_31,7.262809459498712e-07
+"['fundamental_57', 'technical_20']_Ridge",7.173897541375861e-07
+"['fundamental_49', 'fundamental_50']_Ridge",6.347353031494551e-07
+technical_9,5.807244711934407e-07
+fundamental_45,5.789079793129477e-07
+fundamental_30,5.710160177759331e-07
+fundamental_26,4.958027492371219e-07
+technical_11,4.950464457984917e-07
+fundamental_47,4.94907007527935e-07
+"['technical_40', 'technical_21']_Ridge",4.7615800406185665e-07
+"['fundamental_45', 'technical_28']_Ridge",4.401778367164496e-07
+fundamental_56,4.1067382910697e-07
+fundamental_39,3.177607811330598e-07
+fundamental_12,3.0100832517512997e-07
+"['fundamental_25', 'technical_37']_Ridge",2.8817682870578476e-07
+fundamental_49,2.766289075963854e-07
+technical_31,2.6270392742730345e-07
+technical_10,2.6223731318195823e-07
+technical_16,2.438078053130636e-07
+technical_25,2.3579709499586172e-07
+derived_0,2.320837549172133e-07
+fundamental_57,2.1884932272725543e-07
+fundamental_35,1.996162332200219e-07
+"['fundamental_9', 'fundamental_42']_Ridge",1.9287956259379756e-07
+fundamental_36,1.7771115167244025e-07
+fundamental_50,1.7663882367347565e-07
+technical_29,1.6649069241180706e-07
+fundamental_33,1.4143351195170496e-07
+fundamental_20,9.753039723932058e-08
+fundamental_44,8.197514616237404e-08
+fundamental_14,6.521955094410773e-08
+fundamental_22,6.209423144588833e-08
+technical_28,5.7707990861675903e-08
+derived_1,4.9021729318516466e-08
+"['fundamental_55', 'fundamental_33']_Ridge",2.9171392421655816e-08
+derived_4,1.6241521169938966e-08
+fundamental_62,5.900279982471017e-09
+fundamental_43,4.741977953435988e-09
+fundamental_18,4.618698420975268e-09
+"['technical_3', 'fundamental_10']_Ridge",0.0
+"['technical_31', 'fundamental_16']_Ridge",0.0
+"['technical_39', 'technical_0']_Ridge",0.0
+"['fundamental_20', 'fundamental_58']_Ridge",0.0
+"['fundamental_40', 'fundamental_59']_Ridge",0.0
+technical_42,0.0
+"['derived_0', 'fundamental_6']_Ridge",0.0
+"['fundamental_54', 'fundamental_7']_Ridge",0.0
+"['fundamental_27', 'fundamental_39']_Ridge",0.0
+"['technical_32', 'derived_4']_Ridge",0.0
+"['technical_33', 'fundamental_52']_Ridge",0.0
+"['technical_19', 'technical_16']_Ridge",0.0
+technical_41,0.0
+"['technical_42', 'fundamental_15']_Ridge",0.0
+technical_33,0.0
+"['fundamental_11', 'fundamental_44']_Ridge",0.0
+"['technical_7', 'technical_30']_Ridge",0.0
+"['fundamental_2', 'technical_41']_Ridge",0.0
+"['technical_25', 'fundamental_26']_Ridge",0.0
+"['fundamental_31', 'technical_9']_Ridge",0.0
+technical_37,0.0
+technical_38,0.0
+technical_39,0.0
+"['technical_12', 'technical_29']_Ridge",0.0
+"['fundamental_62', 'technical_18']_Ridge",0.0
+technical_0,0.0
+technical_18,0.0
+fundamental_10,0.0
+fundamental_27,0.0
+fundamental_25,0.0
+fundamental_24,0.0
+fundamental_23,0.0
+fundamental_17,0.0
+fundamental_16,0.0
+fundamental_15,0.0
+fundamental_13,0.0
+fundamental_11,0.0
+fundamental_9,0.0
+technical_13,0.0
+fundamental_8,0.0
+fundamental_7,0.0
+fundamental_6,0.0
+fundamental_5,0.0
+fundamental_3,0.0
+fundamental_2,0.0
+fundamental_1,0.0
+derived_3,0.0
+derived_2,0.0
+fundamental_29,0.0
+fundamental_32,0.0
+fundamental_37,0.0
+fundamental_40,0.0
+technical_12,0.0
+technical_7,0.0
+technical_5,0.0
+technical_3,0.0
+technical_1,0.0
+fundamental_63,0.0
+fundamental_61,0.0
+fundamental_60,0.0
+fundamental_59,0.0
+fundamental_58,0.0
+fundamental_55,0.0
+fundamental_54,0.0
+fundamental_53,0.0
+fundamental_52,0.0
+fundamental_51,0.0
+fundamental_48,0.0
+fundamental_46,0.0
+fundamental_42,0.0
+fundamental_41,0.0
+"['fundamental_17', 'technical_5']_Ridge",0.0
