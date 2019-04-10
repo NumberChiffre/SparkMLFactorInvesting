@@ -1,3 +1,4 @@
+"""
 import warnings
 warnings.simplefilter(action='ignore', category=FutureWarning)
 import pandas as pd 
@@ -5,17 +6,17 @@ import numpy as np
 import re
 import statsmodels.api as sm
 from scipy import stats
-import math
 from sklearn.linear_model import LassoCV, Ridge
 from sklearn.ensemble import ExtraTreesRegressor
 import os
 os.environ['KMP_DUPLICATE_LIB_OK'] = 'True'
 import xgboost as xgb
 import lightgbm as lgb
+"""
 import environment
 from dataset import Dataset
-from train import Model_Training, LinearModelGenerator
-
+from train import *
+import re
 
 # use the Dataset object to perform feature selection
 class FeatureGenerator(object):
@@ -99,10 +100,6 @@ class FeatureGenerator(object):
         for feature in top_features:
             model = Ridge()
             model.fit(np.array(train[feature].values).reshape(-1,1), train.y.values)
-            y_actual_list = []
-            y_pred_list = []
-            overall_reward_list = []
-            ts_list = [] 
             env = environment.make(self.df_norm)
             observation = env.reset()
 
@@ -111,15 +108,7 @@ class FeatureGenerator(object):
                 observation.target.y = model.predict(test_x).clip(self.min_y_cut, self.max_y_cut)
                 target = observation.target
                 timestamp = observation.features["timestamp"][0]
-                actual_y = list(test[test["timestamp"] == timestamp]["y"].values)
                 observation, reward, done, info = env.step(target)
-
-                pred_y = list(target.y.values)
-                y_actual_list.extend(actual_y)
-                y_pred_list.extend(pred_y)
-                overall_reward = environment.get_reward(np.array(y_actual_list), np.array(y_pred_list))
-                overall_reward_list.append(overall_reward)
-                ts_list.append(timestamp)
                 if done:
                     track_score[feature] = info['public_score']
                     print(feature, track_score[feature])
@@ -129,43 +118,46 @@ class FeatureGenerator(object):
         rewards_df.index.name = 'features'
         rewards_df.to_csv(self.outpath+'_Ridge_Reward.csv')
 
-        fig = plt.figure(figsize=(12, 6))
-        plt.plot(ts_list, r1_overall_reward_list, c='blue')
-        plt.plot(ts_list, [0]*len(ts_list), c='red')
-        plt.title("Cumulative R value change for Univariate Ridge (technical_20)")
-        plt.ylim([-0.04,0.04])
-        plt.xlim([850, 1850])
-        plt.savefig(self.outpath+'_model.png')
-        return overall_reward_list, ts_list
-
     # rank corr with y and single feature reward score
     # take top features with the least delta in rank
     def select_top_features(self, num_features_threshold=14, abs_rank_delta=25):
-        y = self.train['y']
-        train = self.train[self.features]
-        corr_with_y = train.corrwith(y).abs().sort_values(ascending=False).to_frame(name='corr')
-        corr_with_y.index.name = 'features'
-        corr_with_y.reset_index(level=0, inplace=True)
-        corr_with_y['rank_corr'] = corr_with_y['corr'].rank()
-        reward_df = pd.read_csv(self.outpath+'_Ridge_Reward.csv')
-        reward_df['rank_reward'] = reward_df['reward'].rank()
-        rank_df = pd.merge(corr_with_y, reward_df, on='features')
-        top_rank_df = rank_df[(abs(rank_df['rank_corr']-rank_df['rank_reward']) < abs_rank_delta) & (rank_df['rank_reward'] > 0)]
-        top_rank_df.to_csv(self.outpath+'_Top_Ridge_Corr_Reward_Rank.csv')
-        print(top_rank_df)
+        output_file = self.outpath+'_Top_Ridge_Corr_Reward_Rank.csv'
+        if os.path.isfile(output_file):
+            top_rank_df = pd.read_csv(output_file)
+        else:
+            y = self.train['y']
+            train = self.train[self.features]
+            corr_with_y = train.corrwith(y).abs().sort_values(ascending=False).to_frame(name='corr')
+            corr_with_y.index.name = 'features'
+            corr_with_y.reset_index(level=0, inplace=True)
+            corr_with_y['rank_corr'] = corr_with_y['corr'].rank()
+            reward_df = pd.read_csv(self.outpath+'_Ridge_Reward.csv')
+            reward_df['rank_reward'] = reward_df['reward'].rank()
+            rank_df = pd.merge(corr_with_y, reward_df, on='features')
+            top_rank_df = rank_df[(abs(rank_df['rank_corr']-rank_df['rank_reward']) < abs_rank_delta) & (rank_df['rank_reward'] > 0)]
+            top_rank_df.to_csv(self.outpath+'_Top_Ridge_Corr_Reward_Rank.csv')
+            print(top_rank_df)
         return list(top_rank_df.head(num_features_threshold)['features'])
 
 
     # feature engineering on filtered features based on correlation against the output variable
-    def generate_features(self, features=[]):
+    def generate_features(self, features=[], use_full_set=False):
+        if not use_full_set:
+            features_df = self.train
+        else:
+            features_df = self.df_norm
         if not features:
-            selected_features = [c for c in self.train.columns if c not in self.ind + ['y']]
+            selected_features = [c for c in features_df if c not in self.ind + ['y']]
         else:
             selected_features = features
         print("selected features: ", selected_features)
-        features_df = self.train
         features_clusters = list(set([tuple(x) for x in self.cluster_corr(features=selected_features)]))
         features_clusters = [list(x) for x in features_clusters]
+
+        for e1 in features_clusters:
+            for e2 in features_clusters:
+                if set(e2) < set(e1):
+                    features_clusters.remove(e2)
 
         # remove features to be combined from total set of features
         for feature_list in features_clusters:
@@ -182,14 +174,18 @@ class FeatureGenerator(object):
         # add value from technical 20 - 30, which shares a high corr with ewm of output y
         # check its market premium return
         selected_features.append('20_30')
+        self.features.append('20_30')
         features_df['20_30'] = features_df['technical_20'] - features_df['technical_30']
         mkt_20_30 = features_df[['timestamp', '20_30']].groupby('timestamp')['20_30'].mean()
         features_df['mkt_20_30'] = mkt_20_30[features_df['timestamp']].values
-        features_df['premium_20_30'] = features_df['20_30'] - features_df['mkt_20_30']   
-        vol_20_30 = features_df[['timestamp', '20_30']].groupby('timestamp')['20_30'].std() * np.sqrt(255.)
-        vol_20_30 = vol_20_30.rolling(window=2, min_periods=1).mean()
-        features_df['vol_20_30'] = vol_20_30[features_df['timestamp']].values
+        features_df['premium_20_30'] = features_df['20_30'] - features_df['mkt_20_30']  
 
+        # rolling vol for 20-30
+        for lag in [5,10,20]: 
+            vol_20_30 = features_df[['timestamp', '20_30']].groupby('timestamp')['20_30'].std() * np.sqrt(255.)
+            vol_20_30 = vol_20_30.rolling(window=lag, min_periods=1).mean()
+            features_df['vol_20_30_rolling'+str(lag)] = vol_20_30[features_df['timestamp']].values
+    
         # de-mean each selected feature 
         features_df[[c+'_demean' for c in selected_features]] = features_df[['timestamp']+selected_features].groupby('timestamp')[selected_features].apply(lambda x:x-x.mean())
 
@@ -209,56 +205,74 @@ class FeatureGenerator(object):
         for lag in [12,26]:
             features_df['y_ewm_'+str(lag)+'_mean'] = features_df.groupby('id')['y'].apply(lambda x:x.ewm(span=lag).mean())
         features_df['y_macd_mean'] = features_df['y_ewm_12_mean'] - features_df['y_ewm_26_mean']
-        self.features = [c for c in features_df if c not in self.ind + ['y'] + selected_features and 'ewm' not in c]
-        self.train = features_df.fillna(0)
-        return self.train
+        
+        # generate subset of features, based on their utility:
+        features_dict = {}
+        features_dict['RollingVol_20-30'] = [c for c in features_df if 'vol_20_30_rolling' in c]
+        features_dict['RollingVol'] = [c for c in features_df if 'rolling' in c and '20_30' not in c]
+        features_dict['Demean_Lag'] = [c for c in features_df if 'lag' in c]
+        features_dict['20-30'] = [c for c in features_df if 'mkt' in c or 'premium' in c]
+        self.features_dict = features_dict
+        self.features = [c for c in features_df if c not in self.ind + ['y'] + self.features and 'ewm' not in c and 'macd' not in c]
+        
+        if not use_full_set:
+            self.train = features_df.fillna(0)
+        return features_df.fillna(0)
 
 
     # run several Trees models in parallel to get feature importance ranks
     def get_feature_importance(self, split_ratio=0.6):
         params = [
-                   {'max_depth': range(3,9), 
-                    'min_samples_leaf': range(50, 101), 
-                    'n_estimators': range(100,201)
-                   },
-                   {'max_depth': range(3,9),
-                    'min_child_weight': range(50, 101),
-                    'reg_lambda:': [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8],
-                    'reg_alpha': [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8],
-                    'colsample_bytree': [x/10 for x in range(3, 10)],
-                    'subsample': [x/10 for x in range(5, 10)],
-                    'n_estimators': range(100, 201),
-                    'learning_rate': [0.01, 0.05, 0.1]
-                   },
-                   {'num_leaves': range(50, 101),
-                    'feature_fraction': [x/10 for x in range(4, 9)],
-                    'bagging_fraction': [x/10 for x in range(5, 8)],
-                    'learning_rate': [0.01, 0.05, 0.1, 0.15, 0.2],
-                    'n_estimators': range(100, 201),
-                    'max_depth': range(3,9),
-                    'colsample_bytree': [x/10 for x in range(3, 10)],
-                    'subsample': [x/10 for x in range(5, 10)]
-                   }
+                    {
+                        'max_depth': range(3,9), 
+                        'min_samples_leaf': range(50, 101), 
+                        'n_estimators': range(100,201)
+                    },
+                    {
+                        'alpha': [x/1000 for x in range(1, 500, 25)],
+                        'fit_intercept': [True, False]
+                    },
+                    {
+                        'max_depth': range(3,9),
+                        'min_child_weight': range(50, 101),
+                        'reg_lambda': [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8],
+                        'reg_alpha': [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8],
+                        'colsample_bytree': [x/10 for x in range(3, 10)],
+                        'subsample': [x/10 for x in range(5, 10)],
+                        'n_estimators': range(100, 201),
+                        'learning_rate': [0.01, 0.05, 0.1]
+                    }
         ]
+        """
+        {
+            'num_leaves': range(50, 101)
+            'feature_fraction': [x/10 for x in range(4, 9)],
+            'bagging_fraction': [x/10 for x in range(5, 8)],
+            'learning_rate': [0.01, 0.05, 0.1, 0.15, 0.2],
+            'n_estimators': range(100, 201),
+            'max_depth': range(3,9),
+            'colsample_bytree': [x/10 for x in range(3, 10)],
+            'subsample': [x/10 for x in range(5, 10)]
+        }
+        """
         training = Model_Training(self.train, self.features)
-        models = [ExtraTreesRegressor(n_jobs=-1), xgb.XGBRegressor(n_jobs=-1)]
-        num_features = 20
+        models = [xgb.XGBRegressor(n_jobs=-1)]
+        num_features = 14
         title = 'Top ' + str(num_features) + ' Features [60 percent of Training + 40 percent for CV]'
         i = 0
-
-        """
+        
         # generate a subset of models using different features
         for clf in models:
             print(params[i])
-            training.fit(clf, params=params[i])
-            features_rank = training.generate_feature_importance(num_features=num_features, title=title)
-            features_rank.to_csv(self.outpath+clf.__class__.__name__+'_feature_importance.csv')
+            training.fit(clf, params=params[i], features_dict=self.features_dict)
+            if 'Regressor' in clf.__class__.__name__:
+                features_rank = training.generate_feature_importance(num_features=num_features, title=title)
+                features_rank.to_csv(self.outpath+clf.__class__.__name__+'_feature_importance.csv')
             i += 1
         print('Finished generating feature importance')
-        """
-        
+
         # check on the cross-validation..
-        training.cross_validate_multiple(models)
+        #training.cross_validate_multiple(models[:2], params_list=params[:2], features_dict=self.features_dict, title=title)
 
     def Wrapper_features_selection(self):
         features = self.features
@@ -307,13 +321,11 @@ if __name__ == '__main__':
     print("Creating new set of features based on unprocessed dataset")
     features = data_obj.features
     df_norm = data_obj.preprocess(fill_method='median', scale_method='none')
-    """
-    df_raw = df_norm.ix[df_norm[abs(df_norm.y) < abs(df_norm.y).max()*0.95].index, :]
-    lm_generator = LinearModelGenerator(train=df_raw, features=features, num_selected_features=30)
+    lm_generator = LinearModelGenerator(train=df_norm, features=features, num_selected_features=30)
     top_features_lm_etr = lm_generator.generate_top_models()
-    """
+
     features_obj = FeatureGenerator(data_obj)
     #features_obj.generate_single_reward()
     filtered_features = features_obj.select_top_features()
-    new_df = features_obj.generate_features(filtered_features)
+    features_dict = features_obj.generate_features(filtered_features)
     features_obj.get_feature_importance()

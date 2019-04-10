@@ -1,6 +1,7 @@
 import pandas as pd
 import numpy as np
 from sklearn.metrics import r2_score
+import math
 from dataset import Dataset
 
 # turn dataset into usable features mimicking Kagglegym
@@ -13,7 +14,7 @@ class Environment(object):
         self.df = df
 
         # checks if we load generic data or preprocessed data from the Dataset object
-        if not self.df:
+        if self.df.empty:
             with pd.HDFStore(filepath, "r") as hfdata:
                 self.fullset = hfdata.get("train")
         else:
@@ -22,10 +23,10 @@ class Environment(object):
         # checks if we have to use cross-validation pre-arranged indexes
         if use_cv:
             # for each set of train/validation, we have to 
-            self.train, self.test = self.fullset.ix[cv_indexes[0], :], self.fullset.ix[cv_indexes[1]]
-            self.unique_timestamp = self.train["timestamp"].unique() + self.test["timestamp"].unique()
+            self.train, self.test = self.fullset.ix[cv_indexes[0], :], self.fullset.ix[cv_indexes[1], :]
+            self.unique_timestamp = list(self.train["timestamp"].unique()) + list(self.test["timestamp"].unique())
             self.n = len(self.unique_timestamp)
-            self.unique_idx = int(self.train["timestamp"].unique()[-1])
+            self.unique_idx = int(list(self.train["timestamp"].unique())[-1])
         else:
             self.unique_timestamp = self.fullset["timestamp"].unique()
             self.n = len(self.unique_timestamp)
@@ -34,31 +35,43 @@ class Environment(object):
             timesplit = self.unique_timestamp[self.unique_idx]
             self.train = self.fullset[self.fullset.timestamp < timesplit]
             self.test = self.fullset[self.fullset.timestamp >= timesplit]
-    
+
         # Needed to compute final score
         self.full = self.test.loc[:, ['timestamp', 'y']]
         self.full['y_hat'] = 0.0
         self.temp_test_y = None
 
     def reset(self):
-        timesplit = self.unique_timestamp[self.unique_idx]
         if self.use_cv:
-            self.unique_idx = int(self.test["timestamp"].unique()[0]) - 1
+            self.unique_idx = int(list(self.test["timestamp"].unique())[0])
+            #timesplit = self.unique_timestamp[self.unique_idx]
+            timesplit = self.unique_idx
         else:
+            timesplit = self.unique_timestamp[self.unique_idx]
             self.unique_idx = int(self.n*self.split_ratio)
         self.unique_idx += 1
         subset = self.test[self.test.timestamp == timesplit]
-
+    
         # reset index to conform to how kagglegym works
         target = subset.loc[:, ['id', 'y']].reset_index(drop=True)
         self.temp_test_y = target['y']
         target.loc[:, 'y'] = 0.0  # set the prediction column to zero
-        features = subset.iloc[:, :110].reset_index(drop=True)
+
+        # directly use features selected for the algorithm
+        if self.features:
+            features = subset.loc[:, ['timestamp']+self.features].reset_index(drop=True)
+        
+        # else, just use default 110 features provided
+        else:
+            features = subset.iloc[:, 0:110].reset_index(drop=True)
         observation = Observation(self.train, target, features)
         return observation
 
     def step(self, target):
-        timesplit = self.unique_timestamp[self.unique_idx-1]
+        if self.use_cv:
+            timesplit = self.unique_idx-1
+        else:
+            timesplit = self.unique_timestamp[self.unique_idx-1]
         # Since full and target have a different index we need
         # to do a _values trick here to get the assignment working
         y_hat = target.loc[:, ['y']]
@@ -74,7 +87,10 @@ class Environment(object):
             reward = r_score(self.temp_test_y, target.loc[:, 'y'])
             done = False
             info = {}
-            timesplit = self.unique_timestamp[self.unique_idx]
+            if self.use_cv:
+                timesplit = self.unique_idx
+            else:
+                timesplit = self.unique_timestamp[self.unique_idx]
             self.unique_idx += 1
             subset = self.test[self.test.timestamp == timesplit]
 
@@ -86,11 +102,11 @@ class Environment(object):
             target.loc[:, 'y'] = 0
 
             # directly use features selected for the algorithm
-            if self.df and self.features:
-                features = subset.loc[:, self.features].reset_index(drop=True)
+            if self.features:
+                features = subset.loc[:, ['timestamp']+self.features].reset_index(drop=True)
             
             # else, just use default 110 features provided
-            elif not self.features:
+            else:
                 features = subset.iloc[:, 0:110].reset_index(drop=True)
             observation = Observation(self.train, target, features)
         return observation, reward, done, info
@@ -99,7 +115,7 @@ class Environment(object):
         return "Environment()"
 
 def make(dataset=pd.DataFrame(), cv_indexes=[], use_cv=False, features=[]):
-    if not dataset:
+    if dataset.empty:
         return Environment()
     return Environment(dataset, cv_indexes, use_cv, features)
 
@@ -116,7 +132,7 @@ def r_score(y_true, y_pred, sample_weight=None, multioutput=None):
         return -1
     else:
         return r
-        
+
 def get_reward(y_true, y_fit):
     R2 = 1 - np.sum((y_true - y_fit)**2) / np.sum((y_true - np.mean(y_true))**2)
     R = np.sign(R2) * math.sqrt(abs(R2))
