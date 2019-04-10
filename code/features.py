@@ -225,7 +225,7 @@ class FeatureGenerator(object):
         params = [
                     {
                         'max_depth': range(3,9), 
-                        'min_samples_leaf': range(50, 101), 
+                        'min_samples_leaf': range(70, 110), 
                         'n_estimators': range(100,201)
                     },
                     {
@@ -234,7 +234,7 @@ class FeatureGenerator(object):
                     },
                     {
                         'max_depth': range(3,9),
-                        'min_child_weight': range(50, 101),
+                        'min_child_weight': range(70, 110),
                         'reg_lambda': [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8],
                         'reg_alpha': [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8],
                         'colsample_bytree': [x/10 for x in range(3, 10)],
@@ -321,8 +321,8 @@ if __name__ == '__main__':
     print("Creating new set of features based on unprocessed dataset")
     features = data_obj.features
     df_norm = data_obj.preprocess(fill_method='median', scale_method='none')
-    lm_generator = LinearModelGenerator(train=df_norm, features=features, num_selected_features=30)
-    top_features_lm_etr = lm_generator.generate_top_models()
+    #lm_generator = LinearModelGenerator(train=df_norm, features=features, num_selected_features=30)
+    #top_features_lm_etr = lm_generator.generate_top_models()
 
     features_obj = FeatureGenerator(data_obj)
     #features_obj.generate_single_reward()
