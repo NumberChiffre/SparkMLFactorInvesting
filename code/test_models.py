@@ -11,10 +11,11 @@ from dataset import Dataset
 import environment
 
 class Model_Testing(object):
-    def __init__(self, feature_obj):
+    def __init__(self, feature_obj, lm_generator):
         self.train = feature_obj.train
         self.test = feature_obj.test
         self.feature_obj = feature_obj
+        self.lm_generator = lm_generator
         self.models = [xgb.XGBRegressor(n_jobs=-1), Ridge(), ExtraTreesRegressor(n_jobs=-1)]
         self.num_top_features = 14
         self.modelpath = 'model/'   
@@ -43,6 +44,19 @@ class Model_Testing(object):
                 top_features = list(features_df.tail(self.num_top_features)['Features'].values)
                 top_features = self.feature_obj.features
                 self.generate_single_model(trained_clf, top_features=top_features)
+
+                """
+                if 'Extra' in self.clf_name:
+                    model_file = self.modelpath+self.clf_name+'_lm_trees.joblib'
+                    trained_clf = load(model_file)
+                    features_file = self.outpath+self.clf_name+'_lm_trees_feature_importance.csv'
+                    features_df = pd.read_csv(features_file)
+                    #top_features = list(features_df.head(self.num_top_features)['Features'].values)
+                    top_features = list(features_df['Features'])
+                    full_data = self.lm_generator
+
+                    self.generate_single_model(trained_clf, top_features=top_features)
+                """
             else:
                 for features_name in features_dict:
                     model_file = self.modelpath+self.clf_name+'_'+features_name+'.joblib'
@@ -99,7 +113,8 @@ class Model_Testing(object):
         colors = iter(plt.cm.rainbow(np.linspace(0,1,len(self.cum_reward_dict))))
         for model in self.cum_reward_dict:
             plt.plot(self.timestamp_dict[model], self.cum_reward_dict[model], c=next(colors), label=str(model))
-        plt.plot(self.timestamp_dict[model], [0]*len(self.timestamp_dict[model]), c='red')
+        plt.plot(self.timestamp_dict[model], lm_data, c=next(colors), label="ExtraTrees_LightGBM")        
+        plt.plot(self.timestamp_dict[model], [0]*len(self.timestamp_dict[model]), c=next(colors))
         plt.title("Out-Of-Sample Reward Performance: "+"Train Timestamps["+str(int(self.start_train))+" - "+str(int(self.end_train))+"], Test Timestamps["+str(int(self.start_test))+" - "+str(int(self.end_test))+"]")
         plt.ylim([-0.06, 0.06])
         plt.xlim(self.timestamp_dict[model][0], self.timestamp_dict[model][-1])
